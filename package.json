@@ -1,20 +1,9 @@
 {
-  "name": "fruitstock-wholesale",
-  "private": true,
+  "name": "fruitstock-root",
   "version": "1.0.0",
-  "packageManager": "pnpm@11.19.0",
-  "workspaces": ["client", "server"],
+  "private": true,
   "scripts": {
-    "dev": "concurrently -n API,WEB -c yellow,green \"pnpm --filter fruitstock-server dev\" \"pnpm --filter fruitstock-client dev\"",
-    "build": "pnpm --filter fruitstock-server build && pnpm --filter fruitstock-client build",
-    "typecheck": "pnpm --filter fruitstock-server typecheck && pnpm --filter fruitstock-client typecheck",
-    "db:generate": "pnpm --filter fruitstock-server db:generate",
-    "db:migrate": "pnpm --filter fruitstock-server db:migrate",
-    "db:seed": "pnpm --filter fruitstock-server db:seed",
-    "start": "pnpm --filter fruitstock-server start"
-  },
-  "devDependencies": {
-    "concurrently": "^9.1.2"
-  },
-  "engines": { "node": ">=20" }
+    "build": "cd server && npm install && npx prisma generate && npm run build",
+    "start": "cd server && npm start"
+  }
 }
