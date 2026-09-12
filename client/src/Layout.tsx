@@ -13,6 +13,7 @@ import {
   LogOut, 
   Menu, 
   PackagePlus, 
+  Receipt,
   ReceiptIndianRupee, 
   Search, 
   ShoppingCart, 
@@ -29,6 +30,7 @@ const nav = [
   { to: '/inventory', label: 'Inventory', icon: Boxes },
   { to: '/purchases', label: 'Purchases', icon: PackagePlus },
   { to: '/sales', label: 'Sales', icon: ShoppingCart },
+  { to: '/transactions', label: 'Transactions', icon: Receipt }, // <-- Added here
   { section: 'Relationships' },
   { to: '/customers', label: 'Customers', icon: Users },
   { to: '/dealers', label: 'Dealers', icon: Truck },
@@ -43,6 +45,7 @@ const titles: Record<string, string> = {
   '/inventory': 'Inventory',
   '/purchases': 'Purchases',
   '/sales': 'Sales',
+  '/transactions': 'Transaction History Ledger', // <-- Added here
   '/customers': 'Customers',
   '/dealers': 'Dealers',
   '/payments': 'Payment ledger',
@@ -113,17 +116,13 @@ export default function Layout({
   };
 
   const handleNotificationClick = (item: NotificationItem) => {
-    // 1. Mark this notification as read
     setNotifications(prev =>
       prev.map(n => (n.id === item.id ? { ...n, read: true } : n))
     );
-    // 2. Close dropdown
     setNotifOpen(false);
-    // 3. Redirect to target view
     navigate(item.link);
   };
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
