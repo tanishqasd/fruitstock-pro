@@ -1,27 +1,429 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Building2, IndianRupee, MapPin, Phone, Plus, Truck, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Building2, Edit2, History, Phone, Plus, Search, Trash2, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { api, inr, post } from '../api';
+import { api, inr, post, shortDate } from '../api';
 import type { Customer, Dealer } from '../types';
-import { Field, Loader, Modal, PageHeader, SearchBox, Status } from '../components';
+import { Field, Loader, Modal, PageHeader, SearchBox } from '../components';
 
-function Entities({kind}:{kind:'customer'|'dealer'}) {
-  const customerMode=kind==='customer'; const endpoint=customerMode?'/customers':'/dealers';
-  const [rows,setRows]=useState<(Customer|Dealer)[]>(); const [search,setSearch]=useState(''); const [open,setOpen]=useState(false); const [busy,setBusy]=useState(false);
-  const [form,setForm]=useState({name:'',phone:'',address:'',gstNumber:'',creditLimit:50000,paymentTerms:7,openingBalance:0,contactPerson:''});
-  const load=()=>api<(Customer|Dealer)[]>(endpoint).then(setRows); useEffect(()=>{load();},[endpoint]);
-  async function save(e:React.FormEvent){e.preventDefault();setBusy(true);try{await post(endpoint,form);toast.success(`${customerMode?'Customer':'Dealer'} added`);setOpen(false);setForm({name:'',phone:'',address:'',gstNumber:'',creditLimit:50000,paymentTerms:7,openingBalance:0,contactPerson:''});await load();}catch(e){toast.error((e as Error).message)}finally{setBusy(false)}}
-  const filtered=useMemo(()=>rows?.filter(r=>`${r.name} ${r.phone} ${r.address}`.toLowerCase().includes(search.toLowerCase()))||[],[rows,search]);
-  if(!rows)return <Loader/>;
-  const total=rows.reduce((s,r)=>s+Number(customerMode?(r as Customer).outstanding:(r as Dealer).payable),0);
-  const volume=rows.reduce((s,r)=>s+Number(customerMode?(r as Customer).totalSales:(r as Dealer).totalPurchases),0);
-  return <>
-    <PageHeader eyebrow={customerMode?'Accounts receivable':'Supply network'} title={customerMode?'Customers':'Dealers'} subtitle={customerMode?'Track customer business, credit limits, and every outstanding rupee.':'Manage suppliers, purchase history, and amounts you need to pay.'} action={<button className="btn primary" onClick={()=>setOpen(true)}><Plus size={17}/>Add {kind}</button>}/>
-    <div className="summary-row"><div>{customerMode?<Users/>:<Truck/>}<span>Active {customerMode?'customers':'dealers'}<strong>{rows.length}</strong></span></div><div><Building2/><span>Total business<strong>{inr(volume)}</strong></span></div><div className={total?'warn':''}><IndianRupee/><span>{customerMode?'Outstanding':'Total payable'}<strong>{inr(total)}</strong></span></div></div>
-    <section className="panel table-panel"><div className="table-toolbar"><SearchBox value={search} onChange={setSearch} placeholder={`Search ${customerMode?'customers':'dealers'}...`}/><select className="toolbar-select"><option>All balances</option><option>Payment due</option><option>Settled</option></select></div><div className="table-scroll"><table><thead><tr><th>{customerMode?'Customer':'Dealer'}</th><th>Contact</th><th>{customerMode?'Total sales':'Total purchases'}</th><th>{customerMode?'Received':'Paid'}</th><th>{customerMode?'Outstanding':'Payable'}</th><th>{customerMode?'Credit status':'Account status'}</th></tr></thead><tbody>{filtered.map(row=>{const c=row as Customer,d=row as Dealer; const due=Number(customerMode?c.outstanding:d.payable); const limit=Number(c.creditLimit||0); return <tr key={row.id}><td><div className="name-cell"><span className="person-avatar">{row.name.split(' ').map(x=>x[0]).slice(0,2).join('')}</span><span><strong>{row.name}</strong><small><MapPin size={12}/>{row.address||'No address added'}</small></span></div></td><td>{row.phone?<span className="phone"><Phone size={14}/>{row.phone}</span>:'—'}</td><td><strong>{inr(customerMode?c.totalSales:d.totalPurchases)}</strong></td><td className="positive">{inr(customerMode?c.totalReceived:d.totalPaid)}</td><td className={due?'negative':''}><strong>{inr(due)}</strong></td><td><Status tone={!due?'good':customerMode&&limit&&due>limit?'bad':'warn'}>{!due?'Settled':customerMode&&limit&&due>limit?'Over limit':'Payment due'}</Status></td></tr>})}</tbody></table></div></section>
-    <Modal title={`Add ${kind}`} subtitle={customerMode?'Set contact and sensible credit terms.':'Add the supplier’s account details.'} open={open} onClose={()=>setOpen(false)}><form onSubmit={save}><div className="form-grid"><Field label={customerMode?'Customer name':'Dealer / company name'}><input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></Field>{!customerMode&&<Field label="Contact person"><input value={form.contactPerson} onChange={e=>setForm({...form,contactPerson:e.target.value})}/></Field>}<Field label="Mobile number"><input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})} placeholder="+91 98765 43210"/></Field><Field label="GST number"><input value={form.gstNumber} onChange={e=>setForm({...form,gstNumber:e.target.value})}/></Field><Field label="Address"><input value={form.address} onChange={e=>setForm({...form,address:e.target.value})}/></Field>{customerMode&&<><Field label="Credit limit"><div className="input-money"><span>₹</span><input type="number" min="0" value={form.creditLimit} onChange={e=>setForm({...form,creditLimit:+e.target.value})}/></div></Field><Field label="Payment terms (days)"><input type="number" min="0" value={form.paymentTerms} onChange={e=>setForm({...form,paymentTerms:+e.target.value})}/></Field></>}<Field label="Opening balance"><div className="input-money"><span>₹</span><input type="number" value={form.openingBalance} onChange={e=>setForm({...form,openingBalance:+e.target.value})}/></div></Field></div><div className="modal-actions"><button type="button" className="btn secondary" onClick={()=>setOpen(false)}>Cancel</button><button className="btn primary" disabled={busy}>{busy?'Saving...':`Add ${kind}`}</button></div></form></Modal>
-  </>;
+function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
+  const isCustomer = kind === 'customer';
+  const [entities, setEntities] = useState<(Customer | Dealer)[]>([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  // Modals state
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<any | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Form states
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [creditLimit, setCreditLimit] = useState(0);
+  const [gstNumber, setGstNumber] = useState('');
+  const [bankDetails, setBankDetails] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const data = await api<(Customer | Dealer)[]>(isCustomer ? '/customers' : '/dealers');
+      setEntities(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      toast.error('Failed to load records: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [isCustomer]);
+
+  const openCreate = () => {
+    setName('');
+    setPhone('');
+    setAddress('');
+    setCreditLimit(0);
+    setGstNumber('');
+    setBankDetails('');
+    setCreateOpen(true);
+  };
+
+  const openEdit = (entity: any) => {
+    setEditTarget(entity);
+    setName(entity.name || '');
+    setPhone(entity.phone || '');
+    setAddress(entity.address || '');
+    setCreditLimit(Number(entity.creditLimit) || 0);
+    setGstNumber(entity.gstNumber || '');
+    setBankDetails(entity.bankDetails || '');
+  };
+
+  const handleSaveNew = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast.error('Name is mandatory');
+      return;
+    }
+    setBusy(true);
+    try {
+      const payload: any = { name: name.trim(), phone, address };
+      if (isCustomer) payload.creditLimit = creditLimit;
+      else {
+        payload.gstNumber = gstNumber;
+        payload.bankDetails = bankDetails;
+      }
+      await post(isCustomer ? '/customers' : '/dealers', payload);
+      toast.success(`${isCustomer ? 'Customer' : 'Dealer'} registered successfully`);
+      setCreateOpen(false);
+      await load();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save entity');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTarget) return;
+    setBusy(true);
+    try {
+      const payload: any = { name: name.trim(), phone, address };
+      if (isCustomer) payload.creditLimit = creditLimit;
+      else {
+        payload.gstNumber = gstNumber;
+        payload.bankDetails = bankDetails;
+      }
+      // Issue PUT update
+      await api(`/${isCustomer ? 'customers' : 'dealers'}/${editTarget.id}`, {
+        method: 'PUT',
+        data: payload,
+      } as any);
+      toast.success(`${isCustomer ? 'Customer' : 'Dealer'} information updated`);
+      setEditTarget(null);
+      await load();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update entity');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openHistory = async (entity: any) => {
+    try {
+      const fullRecord = await api<any>(`/${isCustomer ? 'customers' : 'dealers'}/${entity.id}`);
+      setHistoryTarget(fullRecord);
+    } catch (err: any) {
+      setHistoryTarget(entity);
+    }
+  };
+
+  if (loading && entities.length === 0) return <Loader />;
+
+  const filtered = entities.filter((e) =>
+    `${e.name} ${e.phone || ''} ${e.address || ''}`.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <>
+      <PageHeader
+        eyebrow={isCustomer ? 'Buyer Directory' : 'Supplier Network'}
+        title={isCustomer ? 'Customers' : 'Dealers'}
+        subtitle={
+          isCustomer
+            ? 'Manage buyer accounts, credit terms, and individual transaction histories.'
+            : 'Track fruit growers, commission agents, supplier balances, and payouts.'
+        }
+        action={
+          <button className="btn primary" onClick={openCreate}>
+            <Plus size={17} /> Add {isCustomer ? 'Customer' : 'Dealer'}
+          </button>
+        }
+      />
+
+      <section className="panel table-panel">
+        <div className="table-toolbar">
+          <SearchBox
+            value={search}
+            onChange={setSearch}
+            placeholder={`Search ${isCustomer ? 'customers by name or phone' : 'dealers by name or phone'}...`}
+          />
+        </div>
+
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Party Name</th>
+                <th>Contact</th>
+                <th>Address</th>
+                {isCustomer ? <th>Credit Limit</th> : <th>GST / Tax ID</th>}
+                <th style={{ textAlign: 'right' }}>Outstanding</th>
+                <th style={{ textAlign: 'center' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((entity: any) => {
+                const balance = Number(entity.balanceDue ?? entity.outstandingBalance ?? 0);
+                return (
+                  <tr key={entity.id}>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => openHistory(entity)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#0284c7',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          padding: 0,
+                          textAlign: 'left',
+                        }}
+                      >
+                        {entity.name}
+                      </button>
+                    </td>
+                    <td>{entity.phone || '—'}</td>
+                    <td>{entity.address || '—'}</td>
+                    <td>{isCustomer ? inr(entity.creditLimit || 0) : entity.gstNumber || '—'}</td>
+                    <td
+                      style={{
+                        textAlign: 'right',
+                        fontWeight: 600,
+                        color: balance > 0 ? '#dc2626' : '#16a34a',
+                      }}
+                    >
+                      {inr(balance)}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          className="btn compact secondary"
+                          title="View Transaction History"
+                          onClick={() => openHistory(entity)}
+                        >
+                          <History size={14} /> History
+                        </button>
+                        <button
+                          type="button"
+                          className="btn compact secondary"
+                          title="Edit Information"
+                          onClick={() => openEdit(entity)}
+                        >
+                          <Edit2 size={14} /> Edit
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#9ca3af' }}>
+                    No {isCustomer ? 'customers' : 'dealers'} found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* --- CREATE MODAL --- */}
+      <Modal
+        title={`Register New ${isCustomer ? 'Customer' : 'Dealer'}`}
+        subtitle="Fill in party details to create account ledger."
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+      >
+        <form onSubmit={handleSaveNew}>
+          <Field label="Full Name">
+            <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ramesh Fruits" />
+          </Field>
+          <Field label="Contact Phone">
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile number" />
+          </Field>
+          <Field label="Physical Address / Mandi Stall">
+            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g. Stall #14, APMC Market" />
+          </Field>
+          {isCustomer ? (
+            <Field label="Credit Limit (₹)">
+              <input
+                type="number"
+                min="0"
+                step="1000"
+                value={creditLimit}
+                onChange={(e) => setCreditLimit(+e.target.value)}
+              />
+            </Field>
+          ) : (
+            <>
+              <Field label="GST Number (Optional)">
+                <input value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} placeholder="GSTIN" />
+              </Field>
+              <Field label="Bank Details / UPI">
+                <input value={bankDetails} onChange={(e) => setBankDetails(e.target.value)} placeholder="Account No, IFSC, or UPI ID" />
+              </Field>
+            </>
+          )}
+          <div className="modal-actions">
+            <button type="button" className="btn secondary" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </button>
+            <button disabled={busy} className="btn primary">
+              {busy ? 'Saving...' : 'Register'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* --- EDIT MODAL (Client Requirement #4) --- */}
+      <Modal
+        title={`Edit ${isCustomer ? 'Customer' : 'Dealer'} Details`}
+        subtitle={`Updating information for ${editTarget?.name}`}
+        open={Boolean(editTarget)}
+        onClose={() => setEditTarget(null)}
+      >
+        <form onSubmit={handleSaveEdit}>
+          <Field label="Full Name">
+            <input required value={name} onChange={(e) => setName(e.target.value)} />
+          </Field>
+          <Field label="Contact Phone">
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </Field>
+          <Field label="Physical Address">
+            <input value={address} onChange={(e) => setAddress(e.target.value)} />
+          </Field>
+          {isCustomer ? (
+            <Field label="Credit Limit (₹)">
+              <input
+                type="number"
+                min="0"
+                value={creditLimit}
+                onChange={(e) => setCreditLimit(+e.target.value)}
+              />
+            </Field>
+          ) : (
+            <>
+              <Field label="GST Number">
+                <input value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} />
+              </Field>
+              <Field label="Bank Details / UPI">
+                <input value={bankDetails} onChange={(e) => setBankDetails(e.target.value)} />
+              </Field>
+            </>
+          )}
+          <div className="modal-actions">
+            <button type="button" className="btn secondary" onClick={() => setEditTarget(null)}>
+              Cancel
+            </button>
+            <button disabled={busy} className="btn primary">
+              {busy ? 'Updating...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* --- TRANSACTION HISTORY MODAL (Client Requirement #1) --- */}
+      <Modal
+        wide
+        title={`${historyTarget?.name || 'Party'} - Transaction History Ledger`}
+        subtitle={`Contact: ${historyTarget?.phone || 'N/A'} | Address: ${historyTarget?.address || 'N/A'}`}
+        open={Boolean(historyTarget)}
+        onClose={() => setHistoryTarget(null)}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="summary-row">
+            <div>
+              <Users />
+              <span>
+                Account Balance
+                <strong style={{ color: Number(historyTarget?.balanceDue ?? historyTarget?.outstandingBalance ?? 0) > 0 ? '#dc2626' : '#16a34a' }}>
+                  {inr(Number(historyTarget?.balanceDue ?? historyTarget?.outstandingBalance ?? 0))}
+                </strong>
+              </span>
+            </div>
+          </div>
+
+          <h4 style={{ margin: '8px 0 4px 0', fontSize: '14px', fontWeight: 600 }}>Invoices & Vouchers</h4>
+          <div className="table-scroll" style={{ maxHeight: '220px' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Reference / Bill No</th>
+                  <th style={{ textAlign: 'right' }}>Total Amount</th>
+                  <th style={{ textAlign: 'right' }}>Paid / Received</th>
+                  <th style={{ textAlign: 'right' }}>Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(isCustomer ? historyTarget?.sales : historyTarget?.purchases)?.map((item: any) => (
+                  <tr key={item.id}>
+                    <td>{shortDate(item.date || item.createdAt)}</td>
+                    <td><code className="ref">{item.saleNo || item.purchaseNo || item.billNumber}</code></td>
+                    <td style={{ textAlign: 'right' }}>{inr(item.totalAmount)}</td>
+                    <td style={{ textAlign: 'right', color: '#16a34a' }}>
+                      {inr(item.receivedAmount ?? item.paidAmount ?? 0)}
+                    </td>
+                    <td style={{ textAlign: 'right', color: item.pendingAmount > 0 ? '#dc2626' : '#6b7280' }}>
+                      {inr(item.pendingAmount || 0)}
+                    </td>
+                  </tr>
+                ))}
+                {!(isCustomer ? historyTarget?.sales : historyTarget?.purchases)?.length && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '16px', color: '#9ca3af' }}>
+                      No bills or invoices recorded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <h4 style={{ margin: '8px 0 4px 0', fontSize: '14px', fontWeight: 600 }}>Payment Remittances</h4>
+          <div className="table-scroll" style={{ maxHeight: '180px' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Mode</th>
+                  <th>Reference / Remarks</th>
+                  <th style={{ textAlign: 'right' }}>Amount Settled</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyTarget?.payments?.map((payment: any) => (
+                  <tr key={payment.id}>
+                    <td>{shortDate(payment.createdAt || payment.date)}</td>
+                    <td><span className="ref">{payment.mode || 'UPI'}</span></td>
+                    <td>{payment.reference || 'Settlement'}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>
+                      {inr(payment.amount)}
+                    </td>
+                  </tr>
+                ))}
+                {!historyTarget?.payments?.length && (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: 'center', padding: '16px', color: '#9ca3af' }}>
+                      No payment records found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Modal>
+    </>
+  );
 }
 
-export const Customers=()=> <Entities kind="customer"/>;
-export const Dealers=()=> <Entities kind="dealer"/>;
+export const Customers = () => <EntitiesView kind="customer" />;
+export const Dealers = () => <EntitiesView kind="dealer" />;

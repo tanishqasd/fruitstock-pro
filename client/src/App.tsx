@@ -10,6 +10,7 @@ import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
+import { TransactionHistory } from './pages/TransactionHistory';
 
 type User = { id: string; name: string; email: string; businessName: string };
 
@@ -32,7 +33,6 @@ export default function App() {
       api<User>('/me')
         .then(setUser)
         .catch(() => {
-          // If token verification fails or backend is unreachable, keep session active
           setUser(fallbackUser);
         });
     } else {
@@ -64,6 +64,7 @@ export default function App() {
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/purchases" element={<Purchases />} />
         <Route path="/sales" element={<Sales />} />
+        <Route path="/transactions" element={<TransactionHistory />} />
         <Route path="/customers" element={<Customers />} />
         <Route path="/dealers" element={<Dealers />} />
         <Route path="/payments" element={<Payments />} />
