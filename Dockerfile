@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package metadata and prisma schema from the server directory
+# Copy dependency manifests and prisma schema from the server directory first
 COPY server/package*.json ./
 COPY server/prisma ./prisma/
 
