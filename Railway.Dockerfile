@@ -2,15 +2,15 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy server package files and install dependencies
+# Copy only the server package files
 COPY server/package*.json ./server/
 WORKDIR /app/server
 RUN npm install
 
-# Copy all server source code
+# Copy only the server source code
 COPY server/ ./
 
-# Generate Prisma client and build TypeScript
+# Generate Prisma client and build
 RUN npx prisma generate
 RUN npm run build
 
