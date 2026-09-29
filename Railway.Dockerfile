@@ -1,17 +1,20 @@
-FROM node:20-alpine
+FROM node:18-alpine
 
 WORKDIR /app
 
-# Ensure working directory is set before copying assets
-COPY package*.json ./
-COPY prisma ./prisma/
-
+# Copy root and server dependencies
+COPY server/package*.json ./server/
+WORKDIR /app/server
 RUN npm install
-RUN npx prisma generate
 
-COPY . ./
+# Copy source code
+COPY server/ ./
+
+# Generate Prisma client and build TypeScript
+RUN npx prisma generate
 RUN npm run build
 
 EXPOSE 5000
+
 CMD ["npm", "start"]
 

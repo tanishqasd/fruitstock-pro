@@ -10,6 +10,7 @@ import Payments from './pages/Payments';
 import Expenses from './pages/Expenses';
 import Reports from './pages/Reports';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
 import { TransactionHistory } from './pages/TransactionHistory';
 
 type User = { id: string; name: string; email: string; businessName: string };
@@ -27,6 +28,8 @@ export default function App() {
     return token ? fallbackUser : null;
   });
 
+  const [isSigningUp, setIsSigningUp] = useState(false);
+
   useEffect(() => {
     const token = localStorage.getItem('fruitstock_token');
     if (token) {
@@ -41,12 +44,16 @@ export default function App() {
   }, []);
 
   if (!user) {
+    if (isSigningUp) {
+      return <Signup onSwitchToLogin={() => setIsSigningUp(false)} />;
+    }
     return (
       <Login
-        onLogin={(result) => {
+        onLogin={(result: any) => {
           localStorage.setItem('fruitstock_token', result.token);
           setUser(result.user || fallbackUser);
         }}
+        onSwitchToSignup={() => setIsSigningUp(true)}
       />
     );
   }
