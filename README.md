@@ -61,7 +61,7 @@ The build never connects to or resets PostgreSQL. Only the pre-deploy migration 
 
 ### First owner on a clean database
 
-After migrations, set temporary Railway variables `OWNER_NAME`, `OWNER_EMAIL`, `OWNER_PASSWORD` (at least 12 characters), and optional `BUSINESS_NAME`. In the **running service's Railway SSH shell**, run:
+After migrations, set temporary Railway variables `OWNER_NAME`, `OWNER_EMAIL`, `OWNER_PASSWORD` (at least 10 characters), and optional `BUSINESS_NAME`. In the **running service's Railway SSH shell**, run:
 
 ```bash
 npm run db:owner

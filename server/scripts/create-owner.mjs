@@ -8,7 +8,7 @@ try {
   const input = z.object({
     name: z.string().trim().min(2),
     email: z.string().trim().email().transform(value => value.toLowerCase()),
-    password: z.string().min(12),
+    password: z.string().min(10),
     businessName: z.string().trim().min(2)
   }).parse({
     name: process.env.OWNER_NAME,
@@ -26,7 +26,7 @@ try {
   }
 } catch (error) {
   console.error(error instanceof z.ZodError
-    ? 'Set OWNER_NAME, a valid OWNER_EMAIL, and OWNER_PASSWORD (at least 12 characters).'
+    ? 'Set OWNER_NAME, a valid OWNER_EMAIL, and OWNER_PASSWORD (at least 10 characters).'
     : 'Owner setup failed. Check database connectivity and apply migrations first.');
   process.exitCode = 1;
 } finally {
