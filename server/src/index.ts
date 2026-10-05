@@ -31,7 +31,13 @@ app.get('/api/health', asyncRoute(async (_req, res) => {
   res.set('Cache-Control', 'no-store');
   try {
     await access(clientIndex);
-    await prisma.user.findFirst({ select: { id: true } });
+    // Validate every business model so a partial migration cannot pass readiness.
+    await Promise.all([
+      prisma.user.findFirst(), prisma.product.findFirst(), prisma.dealer.findFirst(),
+      prisma.customer.findFirst(), prisma.purchase.findFirst(), prisma.purchaseItem.findFirst(),
+      prisma.sale.findFirst(), prisma.saleItem.findFirst(), prisma.payment.findFirst(),
+      prisma.stockTransaction.findFirst(), prisma.expense.findFirst()
+    ]);
     res.json({ status: 'ok', service: 'fruitstock-api', database: 'ok', frontend: 'ok' });
   } catch {
     res.status(503).json({ status: 'unavailable', service: 'fruitstock-api' });

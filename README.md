@@ -44,7 +44,7 @@ Deploy **the entire repository** as one application service, alongside PostgreSQ
 1. Upload/push these files to the repository connected to the existing Railway application service, or use `railway up` from this directory after linking the intended project/service.
 2. Set the application service **Root Directory to `/` (repository root)**, not `/server`. Both client and server are required in the Docker build context.
 3. Use the root `Dockerfile` (builder: Dockerfile). Clear any old build command using Corepack/pnpm. The Dockerfile uses `npm ci` with `package-lock.json`, builds both apps, and retains Prisma CLI for migrations.
-4. The root `railway.json` defines these settings. If the service does not apply this file, enter them in its settings:
+4. Enter the following settings directly in Railway. The root `railway.json` also defines them for services that support legacy Config as Code; newly opted-in services may ignore it after Railway's August 2026 cutoff:
    - Pre-deploy command: `npm run db:deploy`
    - Start command: `node server/dist/index.js`
    - Healthcheck path: `/api/health`, timeout: 120 seconds
@@ -55,7 +55,7 @@ Deploy **the entire repository** as one application service, alongside PostgreSQ
    - Optional `CLIENT_URL`: full public origin(s), comma-separated, if restricting CORS.
    - Leave `VITE_API_URL` unset for this combined deployment; requests use `/api` on the current domain.
 6. Deploy, then go to Settings → Networking → Generate Domain. Use Railway's assigned `PORT` for the domain target. The server listens on `0.0.0.0` and reads `PORT`; 4000 is only its local fallback.
-7. Verify `/`, `/dealers` (including a direct refresh), and `/api/health`. Health returns HTTP 200 only when the frontend entrypoint exists and a Prisma query against the User table succeeds. A database outage or missing schema returns HTTP 503.
+7. Verify `/`, `/dealers` (including a direct refresh), and `/api/health`. Health returns HTTP 200 only when the frontend entrypoint exists and queries against every business model succeed. A database outage or incomplete schema returns HTTP 503.
 
 The build never connects to or resets PostgreSQL. Only the pre-deploy migration command changes the schema, using committed migrations. It does not seed or delete business records.
 
@@ -72,6 +72,10 @@ This creates one owner without touching products, transactions, or existing acco
 ### Existing database created with `prisma db push`
 
 If migration deployment reports **P3005** (non-empty database without migration history), verify that the live schema matches the initial migration before baselining it with `prisma migrate resolve --applied 20260828000000_init` from `server`. Do not mark migrations applied if the schemas differ. A database reset needs a separate, explicit decision because it deletes all records.
+
+### Recovery of the September 2026 legacy deployment
+
+The legacy database had only `User` and `_prisma_migrations`, an unfinished `20260828000000_init`, and a `password` column. For that exact state, run `node server/scripts/repair-legacy-migration.mjs` once from the repository root, then `npm run db:deploy`. The repair checks the table/column/migration state first, renames the password column without changing its values, adds the business name, creates missing business tables in one transaction, and only then marks the failed migration applied. It refuses other database states. Do not put this repair in the recurring pre-deploy command.
 
 ## Troubleshooting
 
