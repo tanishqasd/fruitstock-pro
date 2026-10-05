@@ -7,3 +7,8 @@ dist
 server/prisma/dev.db*
 client/dist
 server/dist
+
+*.tsbuildinfo
+client/vite.config.js
+client/vite.config.d.ts
+work/

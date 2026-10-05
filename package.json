@@ -1,9 +1,23 @@
 {
-  "name": "fruitstock-root",
-  "version": "1.0.0",
+  "name": "fruitstock-wholesale",
   "private": true,
+  "version": "1.0.0",
+  "packageManager": "npm@10.9.2",
+  "workspaces": ["client", "server"],
   "scripts": {
-    "build": "cd server && npm install && npx prisma generate && npm run build",
-    "start": "cd server && npm start"
-  }
+    "dev": "concurrently -n API,WEB -c yellow,green \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "build": "npm run db:generate && npm run build --workspace=server && npm run build --workspace=client",
+    "typecheck": "npm run typecheck --workspace=server && npm run typecheck --workspace=client",
+    "test:deployment": "node --test scripts/verify-deployment.mjs",
+    "db:generate": "npm run db:generate --workspace=server",
+    "db:migrate": "npm run db:migrate --workspace=server",
+    "db:deploy": "npm run db:deploy --workspace=server",
+    "db:seed": "npm run db:seed --workspace=server",
+    "db:owner": "npm run db:owner --workspace=server",
+    "start": "node server/dist/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": { "node": ">=22 <23", "npm": ">=10 <11" }
 }

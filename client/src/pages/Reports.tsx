@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { useNavigate } from 'react-router-dom';
 import { api, inr } from '../api';
 import type { Customer, Dealer, Product, Purchase, Sale } from '../types';
-import { FruitAvatar, Loader, PageHeader, Status } from '../components';
+import { FruitAvatar, Loader, LoadError, PageHeader, Status } from '../components';
 
 type ReportData = {
   products: Product[];
@@ -15,6 +15,7 @@ type ReportData = {
 };
 
 export default function Reports() {
+  const [error, setError] = useState('');
   const [data, setData] = useState<ReportData>();
   const navigate = useNavigate();
 
@@ -27,9 +28,10 @@ export default function Reports() {
       api<Purchase[]>('/purchases'),
     ]).then(([products, customers, dealers, sales, purchases]) =>
       setData({ products, customers, dealers, sales, purchases })
-    );
+    ).catch(error => setError(error.message));
   }, []);
 
+  if (error) return <LoadError message={error}/>;
   if (!data) return <Loader />;
 
   const sales = data.sales.reduce((s, x) => s + Number(x.totalAmount), 0);

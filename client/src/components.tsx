@@ -32,6 +32,10 @@ export function MetricCard({ label, value, note, icon, tone = 'green', trend }: 
 
 export function Loader() { return <div className="loader-wrap"><div className="loader"/><span>Loading your mandi...</span></div>; }
 
+export function LoadError({ message }: { message: string }) {
+  return <div className="empty" role="alert"><h3>Unable to load your records</h3><p>{message}</p><button className="btn primary" onClick={() => window.location.reload()}>Try again</button></div>;
+}
+
 export function FruitAvatar({ name, size = 'normal' }: { name: string; size?: 'normal'|'small' }) {
   const colors = ['#ffdfd2','#e9efc6','#d9e8ff','#f5dbef','#f9e5ae','#dcf0df'];
   const emojis: Record<string,string> = { apple:'🍎', mango:'🥭', banana:'🍌', orange:'🍊', grapes:'🍇', pomegranate:'🔴', watermelon:'🍉', papaya:'🍈', guava:'🍐' };

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { post } from '../api';
 
 interface SignupProps {
   onSwitchToLogin: () => void;
@@ -18,19 +19,7 @@ export default function Signup({ onSwitchToLogin }: SignupProps) {
     setLoading(true);
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || "https://fruitstock-server-production.up.railway.app";
-      
-      const response = await fetch(`${API_URL}/api/auth/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, businessName }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to create account");
-      }
+      await post('/auth/signup', { name, email, password, businessName });
 
       alert("Account created successfully! Please log in.");
       onSwitchToLogin();

@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentDirection {
+  RECEIVED
+  PAID
+}
+
+enum PaymentMode {
+  CASH
+  UPI
+  BANK_TRANSFER
+  CHEQUE
+  OTHER
+}
+
+enum StockMovementType {
+  OPENING
+  PURCHASE
+  SALE
+  DAMAGE
+  ADJUSTMENT
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  businessName String   @default("FruitStock Wholesale")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Product {
+  id                String             @id @default(cuid())
+  name              String
+  variety           String?
+  unit              String             @default("kg")
+  purchaseRate      Decimal            @default(0) @db.Decimal(12, 2)
+  sellingRate       Decimal            @default(0) @db.Decimal(12, 2)
+  avgCost           Decimal            @default(0) @db.Decimal(12, 2)
+  currentStock      Decimal            @default(0) @db.Decimal(12, 3)
+  minStock          Decimal            @default(0) @db.Decimal(12, 3)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  purchaseItems     PurchaseItem[]
+  saleItems         SaleItem[]
+  stockTransactions StockTransaction[]
+
+  @@unique([name, variety])
+}
+
+model Dealer {
+  id             String     @id @default(cuid())
+  name           String
+  bankDetails    String?
+  phone          String?
+  address        String?
+  gstNumber      String?
+  contactPerson  String?
+  openingBalance Decimal    @default(0) @db.Decimal(12, 2)
+  purchases      Purchase[]
+  payments       Payment[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+model Customer {
+  id             String    @id @default(cuid())
+  name           String
+  phone          String?
+  address        String?
+  gstNumber      String?
+  creditLimit    Decimal   @default(0) @db.Decimal(12, 2)
+  openingBalance Decimal   @default(0) @db.Decimal(12, 2)
+  paymentTerms   Int       @default(7)
+  sales          Sale[]
+  payments       Payment[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Purchase {
+  id            String         @id @default(cuid())
+  purchaseNo    String         @unique
+  invoiceNo     String?
+  dealerId      String
+  date          DateTime       @default(now())
+  totalAmount   Decimal        @db.Decimal(12, 2)
+  paidAmount    Decimal        @default(0) @db.Decimal(12, 2)
+  pendingAmount Decimal        @db.Decimal(12, 2)
+  notes         String?
+  dealer        Dealer         @relation(fields: [dealerId], references: [id])
+  items         PurchaseItem[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([dealerId, date])
+}
+
+model PurchaseItem {
+  id         String   @id @default(cuid())
+  purchaseId String
+  productId  String
+  quantity   Decimal  @db.Decimal(12, 3)
+  rate       Decimal  @db.Decimal(12, 2)
+  amount     Decimal  @db.Decimal(12, 2)
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+}
+
+model Sale {
+  id             String     @id @default(cuid())
+  saleNo         String     @unique
+  invoiceNo      String?
+  customerId     String?
+  date           DateTime   @default(now())
+  totalAmount    Decimal    @db.Decimal(12, 2)
+  receivedAmount Decimal    @default(0) @db.Decimal(12, 2)
+  pendingAmount  Decimal    @db.Decimal(12, 2)
+  costAmount     Decimal    @default(0) @db.Decimal(12, 2)
+  notes          String?
+  customer       Customer?  @relation(fields: [customerId], references: [id])
+  items          SaleItem[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([customerId, date])
+}
+
+model SaleItem {
+  id        String  @id @default(cuid())
+  saleId    String
+  productId String
+  quantity  Decimal @db.Decimal(12, 3)
+  rate      Decimal @db.Decimal(12, 2)
+  amount    Decimal @db.Decimal(12, 2)
+  costRate  Decimal @db.Decimal(12, 2)
+  sale      Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id          String           @id @default(cuid())
+  direction   PaymentDirection
+  customerId  String?
+  dealerId    String?
+  amount      Decimal          @db.Decimal(12, 2)
+  mode        PaymentMode      @default(CASH)
+  date        DateTime         @default(now())
+  reference   String?
+  notes       String?
+  customer    Customer?        @relation(fields: [customerId], references: [id])
+  dealer      Dealer?          @relation(fields: [dealerId], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@index([customerId, date])
+  @@index([dealerId, date])
+}
+
+model StockTransaction {
+  id          String            @id @default(cuid())
+  productId   String
+  type        StockMovementType
+  quantity    Decimal           @db.Decimal(12, 3)
+  unitCost    Decimal?          @db.Decimal(12, 2)
+  reference   String?
+  reason      String?
+  date        DateTime          @default(now())
+  product     Product           @relation(fields: [productId], references: [id])
+  createdAt   DateTime          @default(now())
+
+  @@index([productId, date])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  title       String
+  category    String
+  amount      Decimal  @db.Decimal(12, 2)
+  date        DateTime @default(now())
+  paymentMode PaymentMode @default(CASH)
+  notes       String?
+  createdAt   DateTime @default(now())
+}

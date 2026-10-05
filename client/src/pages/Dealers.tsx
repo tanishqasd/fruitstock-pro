@@ -25,7 +25,7 @@ export default function Dealers() {
                 <h3 className="font-bold text-slate-900">{s.name}</h3>
               </div>
               <p className="text-xs text-slate-500 font-medium">Supply: {s.items}</p>
-              <p className="text-xs text-slate-400">{s.region} • {s.contact}</p>
+              <p className="text-xs text-slate-400">{s.region} Â· {s.contact}</p>
             </div>
             <div className="text-right">
               <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">

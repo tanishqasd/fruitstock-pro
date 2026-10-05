@@ -4,11 +4,12 @@ import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { api, inr, post, shortDate } from '../api';
 import type { Customer, Dealer, Product, Purchase, Sale } from '../types';
-import { Field, FruitAvatar, Loader, Modal, PageHeader, SearchBox, Status } from '../components';
+import { Field, FruitAvatar, Loader, LoadError, Modal, PageHeader, SearchBox, Status } from '../components';
 
 type DraftLine = { key: number; productId: string; quantity: number; rate: number };
 
 function Transactions({ kind }: { kind: 'sale' | 'purchase' }) {
+  const [error, setError] = useState('');
   const saleMode = kind === 'sale';
   const [params] = useSearchParams();
   const [products, setProducts] = useState<Product[]>();
@@ -34,7 +35,7 @@ function Transactions({ kind }: { kind: 'sale' | 'purchase' }) {
     setRecords(r);
   };
 
-  useEffect(() => { load(); }, [saleMode]);
+  useEffect(() => { setError(''); load().catch(error => setError(error.message)); }, [saleMode]);
 
   const total = useMemo(() => lines.reduce((s, l) => s + l.quantity * l.rate, 0), [lines]);
   const updateLine = (key: number, values: Partial<DraftLine>) =>
@@ -78,6 +79,7 @@ function Transactions({ kind }: { kind: 'sale' | 'purchase' }) {
     }
   }
 
+  if (error) return <LoadError message={error}/>;
   if (!products) return <Loader />;
 
   const filtered = records.filter(r => {

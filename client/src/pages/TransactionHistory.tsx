@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, Receipt, RefreshCw } from 'lucide-react';
 import { api, inr, shortDate } from '../api';
-import { Loader, PageHeader, SearchBox } from '../components';
+import { Loader, LoadError, PageHeader, SearchBox } from '../components';
 
 export interface UnifiedTransaction {
   id: string;
@@ -16,18 +16,20 @@ export interface UnifiedTransaction {
 }
 
 export function TransactionHistory() {
+  const [error, setError] = useState('');
   const [records, setRecords] = useState<UnifiedTransaction[]>([]);
   const [filter, setFilter] = useState<'ALL' | 'SALE' | 'PURCHASE' | 'EXPENSE'>('ALL');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
   const loadData = async () => {
+    setError('');
     setLoading(true);
     try {
       const data = await api<UnifiedTransaction[]>('/transactions');
       setRecords(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error('Failed to load transaction ledger', err);
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -53,6 +55,7 @@ export function TransactionHistory() {
     .filter((r) => r.direction === 'OUT')
     .reduce((sum, r) => sum + Number(r.amount), 0);
 
+  if (error) return <LoadError message={error}/>;
   if (loading && records.length === 0) return <Loader />;
 
   return (

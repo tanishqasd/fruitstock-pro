@@ -3,20 +3,22 @@ import { AlertTriangle, Boxes, ClipboardList, Plus, SlidersHorizontal } from 'lu
 import toast from 'react-hot-toast';
 import { api, inr, post, shortDate } from '../api';
 import type { Product, StockEntry } from '../types';
-import { Empty, Field, FruitAvatar, Loader, Modal, PageHeader, SearchBox, Status } from '../components';
+import { Empty, Field, FruitAvatar, Loader, LoadError, Modal, PageHeader, SearchBox, Status } from '../components';
 
 const initialFruit = { name: '', variety: '', unit: 'kg', purchaseRate: 0, sellingRate: 0, currentStock: 0, minStock: 0 };
 
 export default function Inventory() {
+  const [error, setError] = useState('');
   const [products, setProducts] = useState<Product[]>(); const [ledger, setLedger] = useState<StockEntry[]>([]);
   const [tab, setTab] = useState<'stock'|'ledger'>('stock'); const [search, setSearch] = useState('');
   const [addOpen, setAddOpen] = useState(false); const [adjustOpen, setAdjustOpen] = useState(false); const [busy, setBusy] = useState(false);
   const [fruit, setFruit] = useState(initialFruit); const [adjust, setAdjust] = useState({ productId: '', quantity: -1, reason: 'Spoiled' });
   const load = () => Promise.all([api<Product[]>('/products'), api<StockEntry[]>('/stock-ledger')]).then(([p,l]) => { setProducts(p); setLedger(l); });
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load().catch(error => setError(error.message)); }, []);
   const filtered = useMemo(() => products?.filter(p => `${p.name} ${p.variety}`.toLowerCase().includes(search.toLowerCase())) || [], [products, search]);
   async function addFruit(e: React.FormEvent) { e.preventDefault(); setBusy(true); try { await post('/products', fruit); toast.success('Fruit added to inventory'); setAddOpen(false); setFruit(initialFruit); await load(); } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); } }
   async function addAdjustment(e: React.FormEvent) { e.preventDefault(); setBusy(true); try { await post('/stock-adjustments', adjust); toast.success('Stock adjustment recorded'); setAdjustOpen(false); await load(); } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); } }
+  if (error) return <LoadError message={error}/>;
   if (!products) return <Loader/>;
   const value = products.reduce((s,p) => s + Number(p.currentStock)*Number(p.avgCost),0); const low = products.filter(p => Number(p.currentStock) <= Number(p.minStock));
   return <>

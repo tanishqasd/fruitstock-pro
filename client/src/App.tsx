@@ -12,37 +12,34 @@ import Reports from './pages/Reports';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import { TransactionHistory } from './pages/TransactionHistory';
+import { Loader, LoadError } from './components';
 
 type User = { id: string; name: string; email: string; businessName: string };
 
-const fallbackUser: User = {
-  id: 'u-demo',
-  name: 'Arjun Mehta',
-  email: 'owner@fruitstock.in',
-  businessName: 'FreshMandi Wholesale'
-};
-
 export default function App() {
-  const [user, setUser] = useState<User | null>(() => {
+  const [user, setUser] = useState<User | null | undefined>(() => {
     const token = localStorage.getItem('fruitstock_token');
-    return token ? fallbackUser : null;
+    return token ? undefined : null;
   });
 
   const [isSigningUp, setIsSigningUp] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('fruitstock_token');
     if (token) {
       api<User>('/me')
         .then(setUser)
-        .catch(() => {
-          setUser(fallbackUser);
+        .catch(error => {
+          setError(error.message);
         });
     } else {
       setUser(null);
     }
   }, []);
 
+  if (error) return <LoadError message={error}/>;
+  if (user === undefined) return <Loader/>;
   if (!user) {
     if (isSigningUp) {
       return <Signup onSwitchToLogin={() => setIsSigningUp(false)} />;
@@ -51,7 +48,7 @@ export default function App() {
       <Login
         onLogin={(result: any) => {
           localStorage.setItem('fruitstock_token', result.token);
-          setUser(result.user || fallbackUser);
+          setUser(result.user);
         }}
         onSwitchToSignup={() => setIsSigningUp(true)}
       />

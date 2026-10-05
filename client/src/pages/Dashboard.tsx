@@ -15,7 +15,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { Link } from 'react-router-dom';
 import { api, inr, shortDate } from '../api';
 import type { Customer, Dealer, Product, Purchase, Sale } from '../types';
-import { FruitAvatar, Loader, MetricCard, PageHeader, Status } from '../components';
+import { FruitAvatar, Loader, LoadError, MetricCard, PageHeader, Status } from '../components';
 
 type Expense = {
   id: string;
@@ -28,6 +28,7 @@ type Expense = {
 };
 
 export default function Dashboard() {
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [sales, setSales] = useState<Sale[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -53,9 +54,11 @@ export default function Dashboard() {
         setDealers(deal || []);
         setExpenses(exp || []);
       })
+      .catch(error => setError(error.message))
       .finally(() => setLoading(false));
   }, []);
 
+  if (error) return <LoadError message={error}/>;
   if (loading) return <Loader />;
 
   const todayStr = new Date().toISOString().slice(0, 10);

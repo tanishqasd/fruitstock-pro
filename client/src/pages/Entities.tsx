@@ -3,9 +3,10 @@ import { Building2, Edit2, History, Phone, Plus, Search, Trash2, Users } from 'l
 import toast from 'react-hot-toast';
 import { api, inr, post, shortDate } from '../api';
 import type { Customer, Dealer } from '../types';
-import { Field, Loader, Modal, PageHeader, SearchBox } from '../components';
+import { Field, Loader, LoadError, Modal, PageHeader, SearchBox } from '../components';
 
 function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
+  const [error, setError] = useState('');
   const isCustomer = kind === 'customer';
   const [entities, setEntities] = useState<(Customer | Dealer)[]>([]);
   const [search, setSearch] = useState('');
@@ -26,12 +27,13 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
   const [bankDetails, setBankDetails] = useState('');
 
   const load = async () => {
+    setError('');
     setLoading(true);
     try {
       const data = await api<(Customer | Dealer)[]>(isCustomer ? '/customers' : '/dealers');
       setEntities(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      toast.error('Failed to load records: ' + err.message);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -100,8 +102,8 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
       // Issue PUT update
       await api(`/${isCustomer ? 'customers' : 'dealers'}/${editTarget.id}`, {
         method: 'PUT',
-        data: payload,
-      } as any);
+        body: JSON.stringify(payload),
+      });
       toast.success(`${isCustomer ? 'Customer' : 'Dealer'} information updated`);
       setEditTarget(null);
       await load();
@@ -117,10 +119,11 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
       const fullRecord = await api<any>(`/${isCustomer ? 'customers' : 'dealers'}/${entity.id}`);
       setHistoryTarget(fullRecord);
     } catch (err: any) {
-      setHistoryTarget(entity);
+      toast.error((err as Error).message);
     }
   };
 
+  if (error) return <LoadError message={error}/>;
   if (loading && entities.length === 0) return <Loader />;
 
   const filtered = entities.filter((e) =>
