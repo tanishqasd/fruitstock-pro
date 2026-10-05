@@ -1,86 +1,57 @@
-import React, { useState } from "react";
+import { useState } from 'react';
+import { Apple, ArrowRight, BarChart3, Boxes, Eye, EyeOff, ShieldCheck, Sparkles } from 'lucide-react';
 import { post } from '../api';
 
-interface LoginProps {
-  onLogin: (result: { token: string; user?: any }) => void;
-  onSwitchToSignup: () => void;
-}
+type LoginResult = { token: string; user: { id: string; name: string; email: string; businessName: string } };
+type LoginProps = { onLogin: (result: LoginResult) => void; onSwitchToSignup?: () => void };
 
-export default function Login({ onLogin, onSwitchToSignup }: LoginProps) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+export default function Login({ onLogin }: LoginProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setError('');
+    setBusy(true);
     try {
-      const data = await post<{ token: string; user: any }>('/auth/login', { email, password });
-      if (!data.token || !data.user) throw new Error('Invalid sign-in response. Please try again.');
-      onLogin(data);
-    } catch (err: any) {
-      setError(err.message);
+      const result = await post<LoginResult>('/auth/login', { email, password });
+      if (!result.token || !result.user) throw new Error('Invalid sign-in response. Please try again.');
+      onLogin(result);
+    } catch (error) {
+      setError((error as Error).message);
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  };
+  }
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-lg border border-gray-100">
-        <div className="mb-6 text-center">
-          <h2 className="text-2xl font-bold text-gray-900">Welcome Back</h2>
-          <p className="text-sm text-gray-500 mt-1">Log in to FruitStock Wholesale</p>
+  return <div className="login-page">
+    <section className="login-story">
+      <div className="login-brand"><span><Apple /></span><strong>FruitStock</strong></div>
+      <div className="story-copy">
+        <span className="story-tag"><Sparkles />Made for fresh produce wholesalers</span>
+        <h1>Run your mandi.<br /><em>Know every rupee.</em></h1>
+        <p>Stock, sales, dealers, customers, and payments—all connected in one workspace.</p>
+        <div className="story-features">
+          <div><Boxes /><span><strong>Live inventory</strong><small>Every crate and kilo accounted</small></span></div>
+          <div><BarChart3 /><span><strong>Profit visibility</strong><small>Know your margin as you sell</small></span></div>
+          <div><ShieldCheck /><span><strong>Auditable ledgers</strong><small>Track every stock movement</small></span></div>
         </div>
-        
-        {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 border border-red-200">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Email Address</label>
-            <input 
-              type="email" 
-              value={email} 
-              onChange={(e) => setEmail(e.target.value)} 
-              required 
-              placeholder="name@example.com"
-              className="mt-1 w-full rounded-lg border border-gray-300 p-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Password</label>
-            <input 
-              type="password" 
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
-              required 
-              placeholder="••••••••"
-              className="mt-1 w-full rounded-lg border border-gray-300 p-2.5 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition"
-            />
-          </div>
-
-          <button 
-            type="submit" 
-            disabled={loading}
-            className="w-full rounded-lg bg-emerald-600 py-2.5 text-white font-medium hover:bg-emerald-700 transition duration-200 disabled:opacity-50"
-          >
-            {loading ? "Logging in..." : "Log In"}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-gray-600">
-          Ask your business administrator for an owner account.
-          {import.meta.env.DEV && <button onClick={onSwitchToSignup} className="text-emerald-600 font-medium hover:underline focus:outline-none">Sign up</button>}
-        </p>
       </div>
-    </div>
-  );
+      <div className="produce-art" aria-hidden="true"><span className="leaf l1" /><span className="leaf l2" /><span className="fruit f1">🍎</span><span className="fruit f2">🍊</span><span className="fruit f3">🥭</span><span className="fruit f4">🍇</span><span className="crate">Fresh<br />Today</span></div>
+      <small className="story-foot">Built for Indian wholesale businesses · ₹ INR ready</small>
+    </section>
+    <section className="login-form-wrap">
+      <form className="login-form" onSubmit={submit}>
+        <div className="login-welcome"><span>Welcome back</span><h2>Sign in to your business</h2><p>Use your owner account to continue.</p></div>
+        {error && <p className="login-error" role="alert">{error}</p>}
+        <label><span>Email address</span><input type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} /></label>
+        <label><span>Password</span><div className="password-input"><input type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} /><button type="button" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff /> : <Eye />}</button></div></label>
+        <button className="login-button owner-signin" disabled={busy}>{busy ? 'Opening your dashboard...' : <>Sign in <ArrowRight /></>}</button>
+      </form>
+      <p className="login-help">Ask your business administrator for an owner account.</p>
+    </section>
+  </div>;
 }
