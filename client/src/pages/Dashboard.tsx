@@ -27,7 +27,7 @@ type Expense = {
   notes?: string;
 };
 
-export default function Dashboard() {
+export default function Dashboard({ ownerName }: { ownerName: string }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [sales, setSales] = useState<Sale[]>([]);
@@ -135,7 +135,7 @@ export default function Dashboard() {
     <>
       <PageHeader 
         eyebrow={todayFormatted} 
-        title={`${timeGreeting}, Arjun`} 
+        title={`${timeGreeting}, ${ownerName}`} 
         subtitle="Here’s how your wholesale business is moving today." 
         action={
           <div className="header-actions">

@@ -78,36 +78,7 @@ export default function Layout({
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Dynamic notification list with specific routing targets
-  const [notifications, setNotifications] = useState<NotificationItem[]>([
-    { 
-      id: 1, 
-      title: 'Low Stock Alert', 
-      desc: 'Apple (Washington) is below 50 kg.', 
-      time: '10m ago', 
-      type: 'warn', 
-      read: false,
-      link: '/inventory' 
-    },
-    { 
-      id: 2, 
-      title: 'Credit Due', 
-      desc: 'Metro Fresh Mart has ₹70,000 pending.', 
-      time: '1h ago', 
-      type: 'info', 
-      read: false,
-      link: '/customers' 
-    },
-    { 
-      id: 3, 
-      title: 'Mandi Arrival', 
-      desc: 'PUR-1042 recorded from Ramesh Fruit Supplier.', 
-      time: '3h ago', 
-      type: 'success', 
-      read: false,
-      link: '/purchases' 
-    }
-  ]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -159,7 +130,6 @@ export default function Layout({
               >
                 <item.icon size={19} />
                 <span>{item.label}</span>
-                {item.to === '/inventory' && <b>2</b>}
               </NavLink>
             )
           )}
@@ -236,6 +206,7 @@ export default function Layout({
                   </div>
 
                   <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                    {notifications.length === 0 && <p style={{ padding: '16px', margin: 0, fontSize: '12px', color: '#6c7973' }}>No notifications.</p>}
                     {notifications.map(n => (
                       <div 
                         key={n.id} 

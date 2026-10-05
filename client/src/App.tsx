@@ -64,7 +64,7 @@ export default function App() {
       }}
     >
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Dashboard ownerName={user.name} />} />
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/purchases" element={<Purchases />} />
         <Route path="/sales" element={<Sales />} />
