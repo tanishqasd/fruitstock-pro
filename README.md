@@ -50,7 +50,7 @@ The repository-root `vercel.json` deploys the React frontend to Vercel and forwa
 | Output Directory | `client/dist` |
 | Node.js Version | 22.x |
 
-Keep `VITE_API_URL` unset, or set it to `/api`, so requests use the configured proxy. Keep the PostgreSQL connection, JWT secret, and account setup variables in Railway. Vercel serves the frontend; Railway continues running the Express API and PostgreSQL. API rewrites precede the SPA fallback and disable shared caching for authenticated responses.
+Vercel builds use `/api` through the configured proxy, overriding any old `VITE_API_URL` setting. Keep that variable unset or set to `/api` in Vercel. Outside Vercel, an optional API override must start with `https://`, `http://`, or a root-relative path such as `/api`; malformed values fall back to `/api`. Keep the PostgreSQL connection, JWT secret, and account setup variables in Railway. Vercel serves the frontend; Railway continues running the Express API and PostgreSQL. API rewrites precede the SPA fallback and disable shared caching for authenticated responses.
 
 If the existing Vercel project uses `client` as its Root Directory, its `client/vercel.json` uses the equivalent `npm run build` / `dist` settings. Choose one root layout and match the dashboard settings to it. When deploying the ZIP, extract its outer `fruitstock-pro` folder and use that folder as the project root. Redeploy after changing settings or environment variables. Check `/`, a direct `/purchases` page refresh, and `/api/health` on the Vercel domain.
 

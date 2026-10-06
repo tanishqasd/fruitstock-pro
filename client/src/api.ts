@@ -1,4 +1,6 @@
-const base = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+const configuredBase = (import.meta.env.VITE_API_URL || '').trim();
+// A bare hostname becomes a relative page URL, bypassing the API proxy.
+const base = (/^(https?:\/\/|\/(?!\/))/.test(configuredBase) ? configuredBase : '/api').replace(/\/$/, '');
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('fruitstock_token');
