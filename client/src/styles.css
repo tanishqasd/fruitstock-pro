@@ -39,3 +39,5 @@
 @media(max-width:360px){.metrics-grid,.report-cards,.snapshot-strip{grid-template-columns:1fr}.metric-label{min-height:0}.party-table tr{grid-template-columns:1fr}.party-table td{grid-column:1}.page-header h1{font-size:26px}}
 
 .payment-fields{border:0;padding:0;margin:0;min-width:0}
+
+td.negative strong,.snapshot-strip p strong.negative{color:var(--red)}td.positive strong{color:var(--green)}
