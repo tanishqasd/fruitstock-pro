@@ -5,7 +5,7 @@ import { Loader, LoadError, PageHeader, SearchBox } from '../components';
 
 export interface UnifiedTransaction {
   id: string;
-  transactionType: 'SALE' | 'PURCHASE' | 'EXPENSE';
+  transactionType: 'SALE' | 'PURCHASE' | 'EXPENSE' | 'PAYMENT';
   date: string;
   partyName: string;
   category: string;
@@ -18,7 +18,7 @@ export interface UnifiedTransaction {
 export function TransactionHistory() {
   const [error, setError] = useState('');
   const [records, setRecords] = useState<UnifiedTransaction[]>([]);
-  const [filter, setFilter] = useState<'ALL' | 'SALE' | 'PURCHASE' | 'EXPENSE'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | UnifiedTransaction['transactionType']>('ALL');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -48,11 +48,11 @@ export function TransactionHistory() {
   });
 
   const totalInflow = records
-    .filter((r) => r.direction === 'IN')
+    .filter((r) => r.transactionType === 'PAYMENT' && r.direction === 'IN')
     .reduce((sum, r) => sum + Number(r.amount), 0);
 
   const totalOutflow = records
-    .filter((r) => r.direction === 'OUT')
+    .filter((r) => (r.transactionType === 'PAYMENT' || r.transactionType === 'EXPENSE') && r.direction === 'OUT')
     .reduce((sum, r) => sum + Number(r.amount), 0);
 
   if (error) return <LoadError message={error}/>;
@@ -63,7 +63,7 @@ export function TransactionHistory() {
       <PageHeader
         eyebrow="Financial Audit"
         title="Transaction History"
-        subtitle="Unified chronological log of sales, fruit inward purchases, and operating expenses."
+        subtitle="Sales, purchases, payment settlements, and expenses in one chronological ledger."
         action={
           <button className="btn secondary" onClick={loadData}>
             <RefreshCw size={15} /> Refresh
@@ -74,11 +74,11 @@ export function TransactionHistory() {
       <div className="summary-row">
         <div>
           <ArrowDownLeft />
-          <span>Cash Inflow (Sales)<strong className="positive">{inr(totalInflow)}</strong></span>
+          <span>Cash received (Payments)<strong className="positive">{inr(totalInflow)}</strong></span>
         </div>
         <div>
           <ArrowUpRight />
-          <span>Cash Outflow (Purchases & Expenses)<strong className="negative">{inr(totalOutflow)}</strong></span>
+          <span>Cash paid (Payments & Expenses)<strong className="negative">{inr(totalOutflow)}</strong></span>
         </div>
         <div>
           <Receipt />
@@ -88,8 +88,8 @@ export function TransactionHistory() {
 
       <section className="panel table-panel">
         <div className="table-toolbar">
-          <div style={{ display: 'flex', gap: '8px' }}>
-            {(['ALL', 'SALE', 'PURCHASE', 'EXPENSE'] as const).map((tab) => (
+          <div className="transaction-filters">
+            {(['ALL', 'SALE', 'PURCHASE', 'PAYMENT', 'EXPENSE'] as const).map((tab) => (
               <button
                 key={tab}
                 className={`btn compact ${filter === tab ? 'primary' : 'secondary'}`}
@@ -123,7 +123,7 @@ export function TransactionHistory() {
                 <tr key={`${item.transactionType}-${item.id}`}>
                   <td>{shortDate(item.date)}</td>
                   <td>
-                    <span
+                    <span className="transaction-type"
                       style={{
                         padding: '3px 8px',
                         borderRadius: '4px',

@@ -37,6 +37,14 @@ npm start
 
 The deployment smoke checks use a deliberately unreachable local database, so they never touch live data. They verify startup validation, built pages/assets, JSON API errors, and HTTP 503 when the database is unavailable. Database-backed login and transaction checks still need a reachable PostgreSQL instance. Production sign-in fields are empty; demo credentials are displayed only by the development server.
 
+## Account payments and balances
+
+Customer and dealer rows and account histories include **Record payment**. Customer receipts use `POST /api/customers/:id/payments`; dealer payouts use `POST /api/dealers/:id/payments`. Both require the existing JWT authentication and a positive amount with at most two decimal places, payment mode, and optional payment date, reference and notes. Settlement endpoints reject amounts above the account's current due. The general `POST /api/payments` endpoint still supports advance payments as account credit.
+
+Balances use opening balance plus invoice totals minus payments of the matching direction. Invoice-linked receipts are matched within their own account; remaining receipts settle opening dues first and then the oldest invoices. Payment insertion and invoice reconciliation happen together in a serializable transaction. List, profile, invoice and reporting views use the same calculation, with negative red amounts for dues, zero for settled accounts and positive amounts for credit. Payment entries also appear in the unified transaction history; cash summaries count receipts and payouts rather than counting invoice totals again.
+
+`npm run test:accounting` checks the calculation and input validation after building. Deployment checks include authentication on the settlement routes. Railway's `db:deploy` also runs a real PostgreSQL payment verification inside a transaction that always rolls back every test row before the application starts.
+
 ## Vercel frontend with Railway API
 
 The repository-root `vercel.json` deploys the React frontend to Vercel and forwards `/api/*` to the existing Railway backend. Use these Vercel project settings:

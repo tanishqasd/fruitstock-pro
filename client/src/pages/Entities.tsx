@@ -1,431 +1,161 @@
-import { useEffect, useState } from 'react';
-import { Building2, Edit2, History, Phone, Plus, Search, Trash2, Users } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { CreditCard, Edit2, History, Plus, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { api, inr, post, shortDate } from '../api';
-import type { Customer, Dealer } from '../types';
+import { api, dueInr, inr, post, shortDate } from '../api';
+import type { Customer, Dealer, Payment, Purchase, Sale } from '../types';
 import { Field, Loader, LoadError, Modal, PageHeader, SearchBox } from '../components';
+import AccountPaymentDialog from '../components/AccountPaymentDialog';
+
+type Party = Customer | Dealer;
+type Details = Party & { sales?: Sale[]; purchases?: Purchase[]; payments: Payment[]; openingDue?: number };
+const emptyForm = { name: '', phone: '', address: '', creditLimit: 0, gstNumber: '', bankDetails: '' };
 
 function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
-  const [error, setError] = useState('');
   const isCustomer = kind === 'customer';
-  const [entities, setEntities] = useState<(Customer | Dealer)[]>([]);
+  const endpoint = isCustomer ? '/customers' : '/dealers';
+  const balanceOf = (party: Party) => Number(isCustomer ? (party as Customer).outstanding : (party as Dealer).payable);
+  const [error, setError] = useState('');
+  const [entities, setEntities] = useState<Party[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-
-  // Modals state
   const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<any | null>(null);
-  const [historyTarget, setHistoryTarget] = useState<any | null>(null);
+  const [editTarget, setEditTarget] = useState<Party | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<Details | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<Party | null>(null);
   const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [checkingId, setCheckingId] = useState('');
+  const request = useRef(0);
 
-  // Form states
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [creditLimit, setCreditLimit] = useState(0);
-  const [gstNumber, setGstNumber] = useState('');
-  const [bankDetails, setBankDetails] = useState('');
-
-  const load = async () => {
+  async function load() {
     setError('');
-    setLoading(true);
+    try { setEntities(await api<Party[]>(endpoint)); }
+    catch (error) { setError((error as Error).message); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { void load(); return () => { request.current++; }; }, [endpoint]);
+
+  function openEdit(party: Party) {
+    setForm({ name: party.name, phone: party.phone || '', address: party.address || '',
+      creditLimit: Number((party as Customer).creditLimit || 0),
+      gstNumber: (party as Dealer).gstNumber || '', bankDetails: (party as Dealer).bankDetails || '' });
+    setEditTarget(party);
+  }
+
+  async function openAccount(party: Party, action: 'history' | 'payment') {
+    const current = ++request.current;
+    setCheckingId(party.id);
     try {
-      const data = await api<(Customer | Dealer)[]>(isCustomer ? '/customers' : '/dealers');
-      setEntities(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      const details = await api<Details>(`${endpoint}/${party.id}`);
+      if (current !== request.current) return;
+      if (action === 'history') setHistoryTarget(details);
+      else if (balanceOf(details) <= 0) { toast('This account has no outstanding dues'); await load(); }
+      else setPaymentTarget(details);
+    } catch (error) { if (current === request.current) toast.error((error as Error).message); }
+    finally { if (current === request.current) setCheckingId(''); }
+  }
 
-  useEffect(() => {
-    load();
-  }, [isCustomer]);
-
-  const openCreate = () => {
-    setName('');
-    setPhone('');
-    setAddress('');
-    setCreditLimit(0);
-    setGstNumber('');
-    setBankDetails('');
-    setCreateOpen(true);
-  };
-
-  const openEdit = (entity: any) => {
-    setEditTarget(entity);
-    setName(entity.name || '');
-    setPhone(entity.phone || '');
-    setAddress(entity.address || '');
-    setCreditLimit(Number(entity.creditLimit) || 0);
-    setGstNumber(entity.gstNumber || '');
-    setBankDetails(entity.bankDetails || '');
-  };
-
-  const handleSaveNew = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) {
-      toast.error('Name is mandatory');
-      return;
-    }
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy) return;
     setBusy(true);
     try {
-      const payload: any = { name: name.trim(), phone, address };
-      if (isCustomer) payload.creditLimit = creditLimit;
-      else {
-        payload.gstNumber = gstNumber;
-        payload.bankDetails = bankDetails;
-      }
-      await post(isCustomer ? '/customers' : '/dealers', payload);
-      toast.success(`${isCustomer ? 'Customer' : 'Dealer'} registered successfully`);
-      setCreateOpen(false);
+      const payload = isCustomer
+        ? { name: form.name.trim(), phone: form.phone, address: form.address, creditLimit: form.creditLimit }
+        : { name: form.name.trim(), phone: form.phone, address: form.address, gstNumber: form.gstNumber, bankDetails: form.bankDetails };
+      if (editTarget) await api(`${endpoint}/${editTarget.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      else await post(endpoint, payload);
+      toast.success(editTarget ? 'Account details updated' : 'Account registered');
+      setCreateOpen(false); setEditTarget(null);
       await load();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save entity');
-    } finally {
-      setBusy(false);
+    } catch (error) { toast.error((error as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  async function paymentSaved() {
+    await load();
+    if (historyTarget) {
+      try { setHistoryTarget(await api<Details>(`${endpoint}/${historyTarget.id}`)); }
+      catch (error) { setHistoryTarget(null); toast.error((error as Error).message); }
     }
-  };
+  }
 
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editTarget) return;
-    setBusy(true);
-    try {
-      const payload: any = { name: name.trim(), phone, address };
-      if (isCustomer) payload.creditLimit = creditLimit;
-      else {
-        payload.gstNumber = gstNumber;
-        payload.bankDetails = bankDetails;
-      }
-      // Issue PUT update
-      await api(`/${isCustomer ? 'customers' : 'dealers'}/${editTarget.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
-      toast.success(`${isCustomer ? 'Customer' : 'Dealer'} information updated`);
-      setEditTarget(null);
-      await load();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update entity');
-    } finally {
-      setBusy(false);
-    }
-  };
+  if (error) return <LoadError message={error} />;
+  if (loading) return <Loader />;
+  const filtered = entities.filter(party => `${party.name} ${party.phone || ''} ${party.address || ''}`.toLowerCase().includes(search.toLowerCase()));
+  const invoices = isCustomer ? historyTarget?.sales : historyTarget?.purchases;
+  const historyBalance = historyTarget ? balanceOf(historyTarget) : 0;
 
-  const openHistory = async (entity: any) => {
-    try {
-      const fullRecord = await api<any>(`/${isCustomer ? 'customers' : 'dealers'}/${entity.id}`);
-      setHistoryTarget(fullRecord);
-    } catch (err: any) {
-      toast.error((err as Error).message);
-    }
-  };
+  return <>
+    <PageHeader eyebrow={isCustomer ? 'Buyer directory' : 'Supplier network'} title={isCustomer ? 'Customers' : 'Dealers'}
+      subtitle={isCustomer ? 'View customer dues and record received payments.' : 'View supplier dues and record dealer payouts.'}
+      action={<button className="btn primary" onClick={() => { setForm(emptyForm); setCreateOpen(true); }}><Plus size={17} /> Add {isCustomer ? 'Customer' : 'Dealer'}</button>} />
+    <section className="panel table-panel">
+      <div className="table-toolbar"><SearchBox value={search} onChange={setSearch} placeholder="Search name, phone or address…" /></div>
+      <p className="balance-explanation">Dues appear in red with a minus sign. A positive balance is account credit.</p>
+      <div className="table-scroll">
+        <table className="party-table"><thead><tr><th>Party name</th><th>Contact</th><th>Address</th>
+          <th>{isCustomer ? 'Credit limit' : 'GST / Tax ID'}</th><th className="align-right">Balance</th><th>Actions</th></tr></thead>
+          <tbody>{filtered.map(party => {
+            const balance = balanceOf(party);
+            return <tr key={party.id}>
+              <td data-label="Party name"><button className="party-name" onClick={() => void openAccount(party, 'history')}>{party.name}</button></td>
+              <td data-label="Contact">{party.phone || '—'}</td>
+              <td data-label="Address">{party.address || '—'}</td>
+              <td data-label={isCustomer ? 'Credit limit' : 'GST / Tax ID'}>{isCustomer ? inr((party as Customer).creditLimit) : (party as Dealer).gstNumber || '—'}</td>
+              <td data-label="Balance" className={`align-right ${balance > 0 ? 'negative' : 'positive'}`}>
+                <strong>{dueInr(balance)}</strong><small className="balance-caption">{balance > 0 ? 'Due' : balance < 0 ? 'Credit' : 'Settled'}</small>
+              </td>
+              <td data-label="Actions" className="party-actions-cell"><div className="party-actions">
+                <button className="btn compact primary" disabled={balance <= 0 || Boolean(checkingId)} onClick={() => void openAccount(party, 'payment')}
+                  aria-label={`Record payment for ${party.name}`}><CreditCard size={16} />{checkingId === party.id ? 'Checking…' : 'Record payment'}</button>
+                <button className="btn compact secondary" disabled={Boolean(checkingId)} onClick={() => void openAccount(party, 'history')}><History size={16} /> History</button>
+                <button className="btn compact secondary" onClick={() => openEdit(party)}><Edit2 size={16} /> Edit details</button>
+              </div></td>
+            </tr>;
+          })}{filtered.length === 0 && <tr><td colSpan={6} className="empty-row">No {isCustomer ? 'customers' : 'dealers'} found.</td></tr>}</tbody>
+        </table>
+      </div>
+    </section>
 
-  if (error) return <LoadError message={error}/>;
-  if (loading && entities.length === 0) return <Loader />;
+    <Modal title={`${editTarget ? 'Edit' : 'Register'} ${isCustomer ? 'customer' : 'dealer'}`} subtitle="Manage this account’s contact details."
+      open={createOpen || Boolean(editTarget)} onClose={() => { if (!busy) { setCreateOpen(false); setEditTarget(null); } }}>
+      <form onSubmit={save}><Field label="Full name"><input required minLength={2} value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} /></Field>
+        <div className="form-grid"><Field label="Contact phone"><input type="tel" value={form.phone} onChange={event => setForm({ ...form, phone: event.target.value })} /></Field>
+          <Field label="Address"><input value={form.address} onChange={event => setForm({ ...form, address: event.target.value })} /></Field>
+          {isCustomer ? <Field label="Credit limit (₹)"><input type="number" min="0" step="0.01" value={form.creditLimit} onChange={event => setForm({ ...form, creditLimit: Number(event.target.value) })} /></Field> : <>
+            <Field label="GST number (optional)"><input value={form.gstNumber} onChange={event => setForm({ ...form, gstNumber: event.target.value })} /></Field>
+            <Field label="Bank details / UPI"><input value={form.bankDetails} onChange={event => setForm({ ...form, bankDetails: event.target.value })} /></Field>
+          </>}
+        </div><div className="modal-actions"><button type="button" className="btn secondary" disabled={busy} onClick={() => { setCreateOpen(false); setEditTarget(null); }}>Cancel</button>
+          <button className="btn primary" disabled={busy}>{busy ? 'Saving…' : editTarget ? 'Save changes' : 'Register'}</button></div>
+      </form>
+    </Modal>
 
-  const filtered = entities.filter((e) =>
-    `${e.name} ${e.phone || ''} ${e.address || ''}`.toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <>
-      <PageHeader
-        eyebrow={isCustomer ? 'Buyer Directory' : 'Supplier Network'}
-        title={isCustomer ? 'Customers' : 'Dealers'}
-        subtitle={
-          isCustomer
-            ? 'Manage buyer accounts, credit terms, and individual transaction histories.'
-            : 'Track fruit growers, commission agents, supplier balances, and payouts.'
-        }
-        action={
-          <button className="btn primary" onClick={openCreate}>
-            <Plus size={17} /> Add {isCustomer ? 'Customer' : 'Dealer'}
-          </button>
-        }
-      />
-
-      <section className="panel table-panel">
-        <div className="table-toolbar">
-          <SearchBox
-            value={search}
-            onChange={setSearch}
-            placeholder={`Search ${isCustomer ? 'customers by name or phone' : 'dealers by name or phone'}...`}
-          />
-        </div>
-
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Party Name</th>
-                <th>Contact</th>
-                <th>Address</th>
-                {isCustomer ? <th>Credit Limit</th> : <th>GST / Tax ID</th>}
-                <th style={{ textAlign: 'right' }}>Outstanding</th>
-                <th style={{ textAlign: 'center' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((entity: any) => {
-                const balance = Number(entity.balanceDue ?? entity.outstandingBalance ?? 0);
-                return (
-                  <tr key={entity.id}>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() => openHistory(entity)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#0284c7',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          padding: 0,
-                          textAlign: 'left',
-                        }}
-                      >
-                        {entity.name}
-                      </button>
-                    </td>
-                    <td>{entity.phone || '—'}</td>
-                    <td>{entity.address || '—'}</td>
-                    <td>{isCustomer ? inr(entity.creditLimit || 0) : entity.gstNumber || '—'}</td>
-                    <td
-                      style={{
-                        textAlign: 'right',
-                        fontWeight: 600,
-                        color: balance > 0 ? '#dc2626' : '#16a34a',
-                      }}
-                    >
-                      {inr(balance)}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <button
-                          type="button"
-                          className="btn compact secondary"
-                          title="View Transaction History"
-                          onClick={() => openHistory(entity)}
-                        >
-                          <History size={14} /> History
-                        </button>
-                        <button
-                          type="button"
-                          className="btn compact secondary"
-                          title="Edit Information"
-                          onClick={() => openEdit(entity)}
-                        >
-                          <Edit2 size={14} /> Edit
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#9ca3af' }}>
-                    No {isCustomer ? 'customers' : 'dealers'} found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* --- CREATE MODAL --- */}
-      <Modal
-        title={`Register New ${isCustomer ? 'Customer' : 'Dealer'}`}
-        subtitle="Fill in party details to create account ledger."
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-      >
-        <form onSubmit={handleSaveNew}>
-          <Field label="Full Name">
-            <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ramesh Fruits" />
-          </Field>
-          <Field label="Contact Phone">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile number" />
-          </Field>
-          <Field label="Physical Address / Mandi Stall">
-            <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g. Stall #14, APMC Market" />
-          </Field>
-          {isCustomer ? (
-            <Field label="Credit Limit (₹)">
-              <input
-                type="number"
-                min="0"
-                step="1000"
-                value={creditLimit}
-                onChange={(e) => setCreditLimit(+e.target.value)}
-              />
-            </Field>
-          ) : (
-            <>
-              <Field label="GST Number (Optional)">
-                <input value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} placeholder="GSTIN" />
-              </Field>
-              <Field label="Bank Details / UPI">
-                <input value={bankDetails} onChange={(e) => setBankDetails(e.target.value)} placeholder="Account No, IFSC, or UPI ID" />
-              </Field>
-            </>
-          )}
-          <div className="modal-actions">
-            <button type="button" className="btn secondary" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </button>
-            <button disabled={busy} className="btn primary">
-              {busy ? 'Saving...' : 'Register'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* --- EDIT MODAL (Client Requirement #4) --- */}
-      <Modal
-        title={`Edit ${isCustomer ? 'Customer' : 'Dealer'} Details`}
-        subtitle={`Updating information for ${editTarget?.name}`}
-        open={Boolean(editTarget)}
-        onClose={() => setEditTarget(null)}
-      >
-        <form onSubmit={handleSaveEdit}>
-          <Field label="Full Name">
-            <input required value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="Contact Phone">
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </Field>
-          <Field label="Physical Address">
-            <input value={address} onChange={(e) => setAddress(e.target.value)} />
-          </Field>
-          {isCustomer ? (
-            <Field label="Credit Limit (₹)">
-              <input
-                type="number"
-                min="0"
-                value={creditLimit}
-                onChange={(e) => setCreditLimit(+e.target.value)}
-              />
-            </Field>
-          ) : (
-            <>
-              <Field label="GST Number">
-                <input value={gstNumber} onChange={(e) => setGstNumber(e.target.value)} />
-              </Field>
-              <Field label="Bank Details / UPI">
-                <input value={bankDetails} onChange={(e) => setBankDetails(e.target.value)} />
-              </Field>
-            </>
-          )}
-          <div className="modal-actions">
-            <button type="button" className="btn secondary" onClick={() => setEditTarget(null)}>
-              Cancel
-            </button>
-            <button disabled={busy} className="btn primary">
-              {busy ? 'Updating...' : 'Save Changes'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* --- TRANSACTION HISTORY MODAL (Client Requirement #1) --- */}
-      <Modal
-        wide
-        title={`${historyTarget?.name || 'Party'} - Transaction History Ledger`}
-        subtitle={`Contact: ${historyTarget?.phone || 'N/A'} | Address: ${historyTarget?.address || 'N/A'}`}
-        open={Boolean(historyTarget)}
-        onClose={() => setHistoryTarget(null)}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="summary-row">
-            <div>
-              <Users />
-              <span>
-                Account Balance
-                <strong style={{ color: Number(historyTarget?.balanceDue ?? historyTarget?.outstandingBalance ?? 0) > 0 ? '#dc2626' : '#16a34a' }}>
-                  {inr(Number(historyTarget?.balanceDue ?? historyTarget?.outstandingBalance ?? 0))}
-                </strong>
-              </span>
-            </div>
-          </div>
-
-          <h4 style={{ margin: '8px 0 4px 0', fontSize: '14px', fontWeight: 600 }}>Invoices & Vouchers</h4>
-          <div className="table-scroll" style={{ maxHeight: '220px' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Reference / Bill No</th>
-                  <th style={{ textAlign: 'right' }}>Total Amount</th>
-                  <th style={{ textAlign: 'right' }}>Paid / Received</th>
-                  <th style={{ textAlign: 'right' }}>Due</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(isCustomer ? historyTarget?.sales : historyTarget?.purchases)?.map((item: any) => (
-                  <tr key={item.id}>
-                    <td>{shortDate(item.date || item.createdAt)}</td>
-                    <td><code className="ref">{item.saleNo || item.purchaseNo || item.billNumber}</code></td>
-                    <td style={{ textAlign: 'right' }}>{inr(item.totalAmount)}</td>
-                    <td style={{ textAlign: 'right', color: '#16a34a' }}>
-                      {inr(item.receivedAmount ?? item.paidAmount ?? 0)}
-                    </td>
-                    <td style={{ textAlign: 'right', color: item.pendingAmount > 0 ? '#dc2626' : '#6b7280' }}>
-                      {inr(item.pendingAmount || 0)}
-                    </td>
-                  </tr>
-                ))}
-                {!(isCustomer ? historyTarget?.sales : historyTarget?.purchases)?.length && (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', padding: '16px', color: '#9ca3af' }}>
-                      No bills or invoices recorded yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <h4 style={{ margin: '8px 0 4px 0', fontSize: '14px', fontWeight: 600 }}>Payment Remittances</h4>
-          <div className="table-scroll" style={{ maxHeight: '180px' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Mode</th>
-                  <th>Reference / Remarks</th>
-                  <th style={{ textAlign: 'right' }}>Amount Settled</th>
-                </tr>
-              </thead>
-              <tbody>
-                {historyTarget?.payments?.map((payment: any) => (
-                  <tr key={payment.id}>
-                    <td>{shortDate(payment.createdAt || payment.date)}</td>
-                    <td><span className="ref">{payment.mode || 'UPI'}</span></td>
-                    <td>{payment.reference || 'Settlement'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>
-                      {inr(payment.amount)}
-                    </td>
-                  </tr>
-                ))}
-                {!historyTarget?.payments?.length && (
-                  <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', padding: '16px', color: '#9ca3af' }}>
-                      No payment records found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </Modal>
-    </>
-  );
+    <Modal wide title={`${historyTarget?.name || 'Account'} — Transaction history`} subtitle={`Contact: ${historyTarget?.phone || 'Not provided'} | ${historyTarget?.address || 'No address'}`}
+      open={Boolean(historyTarget) && !paymentTarget} onClose={() => setHistoryTarget(null)}>
+      <div className="account-history">
+        <div className="account-history-heading"><div className="summary-row"><div><Users /><span>Account balance<strong className={historyBalance > 0 ? 'negative' : 'positive'}>{dueInr(historyBalance)}</strong></span></div></div>
+          <button className="btn primary" disabled={historyBalance <= 0 || Boolean(checkingId)} onClick={() => historyTarget && void openAccount(historyTarget, 'payment')}><CreditCard size={17} /> Record payment</button></div>
+        <div className="account-totals"><span>Opening balance <b>{dueInr(historyTarget?.openingBalance)}</b></span>
+          <span>Total {isCustomer ? 'sales' : 'purchases'} <b>{inr(isCustomer ? (historyTarget as Customer | null)?.totalSales : (historyTarget as Dealer | null)?.totalPurchases)}</b></span>
+          <span>Total {isCustomer ? 'received' : 'paid'} <b>{inr(isCustomer ? (historyTarget as Customer | null)?.totalReceived : (historyTarget as Dealer | null)?.totalPaid)}</b></span></div>
+        <p className="balance-explanation">Balance = opening balance + {isCustomer ? 'sales' : 'purchases'} − payments. Later payments settle opening dues first, then the oldest bills.</p>
+        <h3>Invoices and vouchers</h3>
+        <div className="table-scroll"><table><thead><tr><th>Date</th><th>Bill number</th><th>Total</th><th>{isCustomer ? 'Received' : 'Paid'}</th><th>Due</th></tr></thead>
+          <tbody>{invoices?.map(invoice => <tr key={invoice.id}><td>{shortDate(invoice.date)}</td><td className="ref">{'saleNo' in invoice ? invoice.saleNo : invoice.purchaseNo}</td>
+            <td>{inr(invoice.totalAmount)}</td><td className="positive">{inr('receivedAmount' in invoice ? invoice.receivedAmount : invoice.paidAmount)}</td>
+            <td className={Number(invoice.pendingAmount) > 0 ? 'negative' : 'positive'}>{dueInr(invoice.pendingAmount)}</td></tr>)}
+            {!invoices?.length && <tr><td colSpan={5} className="empty-row">No invoices recorded yet.</td></tr>}</tbody></table></div>
+        <h3>Payment records</h3>
+        <div className="table-scroll"><table><thead><tr><th>Payment date</th><th>Mode</th><th>Reference</th><th>Amount settled</th></tr></thead><tbody>
+          {historyTarget?.payments.map(payment => <tr key={payment.id}><td>{shortDate(payment.date)}</td><td>{payment.mode.replaceAll('_', ' ')}</td><td>{payment.reference || 'Settlement'}</td><td className="positive">{inr(payment.amount)}</td></tr>)}
+          {!historyTarget?.payments.length && <tr><td colSpan={4} className="empty-row">No payments recorded yet.</td></tr>}
+        </tbody></table></div>
+      </div>
+    </Modal>
+    {paymentTarget && <AccountPaymentDialog key={`${kind}:${paymentTarget.id}`} kind={kind} party={paymentTarget} onClose={() => setPaymentTarget(null)} onSaved={paymentSaved} />}
+  </>;
 }
 
 export const Customers = () => <EntitiesView kind="customer" />;

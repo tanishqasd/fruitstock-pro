@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, CalendarDays, PackagePlus, Plus, Search, ShoppingCart, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { api, inr, post, shortDate } from '../api';
+import { api, dueInr, inr, post, shortDate } from '../api';
 import type { Customer, Dealer, Product, Purchase, Sale } from '../types';
 import { Field, FruitAvatar, Loader, LoadError, Modal, PageHeader, SearchBox, Status } from '../components';
 
@@ -110,7 +110,7 @@ function Transactions({ kind }: { kind: 'sale' | 'purchase' }) {
         </div>
         <div>
           {saleMode ? <ArrowDownToLine /> : <ArrowUpFromLine />}
-          <span>{saleMode ? 'Receivable' : 'Payable'}<strong>{inr(pendingTotal)}</strong></span>
+          <span>{saleMode ? 'Receivable' : 'Payable'}<strong className="negative">{dueInr(pendingTotal)}</strong></span>
         </div>
         <div>
           <CalendarDays />
@@ -154,7 +154,7 @@ function Transactions({ kind }: { kind: 'sale' | 'purchase' }) {
                     </td>
                     <td><strong>{inr(r.totalAmount)}</strong></td>
                     <td className="positive">{inr(saleMode ? sale.receivedAmount : purchase.paidAmount)}</td>
-                    <td className={pending ? 'negative' : ''}>{pending ? inr(pending) : '—'}</td>
+                    <td className={pending ? 'negative' : ''}>{dueInr(pending)}</td>
                     <td><Status tone={pending ? 'warn' : 'good'}>{pending ? 'Part paid' : 'Paid'}</Status></td>
                   </tr>
                 );

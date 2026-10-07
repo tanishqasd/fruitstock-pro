@@ -7,7 +7,7 @@ export function PageHeader({ eyebrow, title, subtitle, action }: { eyebrow?: str
 
 export function Modal({ title, subtitle, open, onClose, children, wide = false }: { title: string; subtitle?: string; open: boolean; onClose: () => void; children: ReactNode; wide?: boolean }) {
   if (!open) return null;
-  return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className={`modal ${wide ? 'modal-wide' : ''}`}><div className="modal-head"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div><button className="icon-button" onClick={onClose}><X size={19}/></button></div>{children}</div></div>;
+  return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><div role="dialog" aria-modal="true" aria-label={title} className={`modal ${wide ? 'modal-wide' : ''}`}><div className="modal-head"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div><button type="button" className="icon-button" aria-label="Close dialog" onClick={onClose}><X size={19}/></button></div>{children}</div></div>;
 }
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {

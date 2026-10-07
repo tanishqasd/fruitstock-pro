@@ -13,8 +13,8 @@ import {
 } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Link } from 'react-router-dom';
-import { api, inr, shortDate } from '../api';
-import type { Customer, Dealer, Product, Purchase, Sale } from '../types';
+import { api, dueInr, inr, shortDate } from '../api';
+import type { Dashboard as DashboardData, Product, Purchase, Sale } from '../types';
 import { FruitAvatar, Loader, LoadError, MetricCard, PageHeader, Status } from '../components';
 
 type Expense = {
@@ -33,26 +33,20 @@ export default function Dashboard({ ownerName }: { ownerName: string }) {
   const [sales, setSales] = useState<Sale[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [dealers, setDealers] = useState<Dealer[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [overview, setOverview] = useState<DashboardData>();
 
   useEffect(() => {
     Promise.all([
       api<Sale[]>('/sales'),
       api<Purchase[]>('/purchases'),
       api<Product[]>('/products'),
-      api<Customer[]>('/customers'),
-      api<Dealer[]>('/dealers'),
-      api<Expense[]>('/expenses'),
+      api<DashboardData>('/dashboard'),
     ])
-      .then(([s, pur, prod, cust, deal, exp]) => {
+      .then(([s, pur, prod, dashboard]) => {
         setSales(s || []);
         setPurchases(pur || []);
         setProducts(prod || []);
-        setCustomers(cust || []);
-        setDealers(deal || []);
-        setExpenses(exp || []);
+        setOverview(dashboard);
       })
       .catch(error => setError(error.message))
       .finally(() => setLoading(false));
@@ -61,31 +55,13 @@ export default function Dashboard({ ownerName }: { ownerName: string }) {
   if (error) return <LoadError message={error}/>;
   if (loading) return <Loader />;
 
-  const todayStr = new Date().toISOString().slice(0, 10);
-
-  const todaySalesList = sales.filter((s) => (s.date ? s.date.slice(0, 10) === todayStr : true));
-  const todaySalesTotal = (todaySalesList.length > 0 ? todaySalesList : sales).reduce(
-    (sum, s) => sum + Number(s.totalAmount || 0),
-    0
-  );
-  const todaySalesCost = (todaySalesList.length > 0 ? todaySalesList : sales).reduce(
-    (sum, s) => sum + Number(s.costAmount || (Number(s.totalAmount || 0) * 0.8)),
-    0
-  );
-
-  const todayPurchasesList = purchases.filter((p) => (p.date ? p.date.slice(0, 10) === todayStr : true));
-  const todayPurchasesTotal = (todayPurchasesList.length > 0 ? todayPurchasesList : purchases).reduce(
-    (sum, p) => sum + Number(p.totalAmount || 0),
-    0
-  );
-
-  const cashReceivedTotal = sales.reduce((sum, s) => sum + Number(s.receivedAmount || 0), 0);
-  const paymentsMadeTotal = purchases.reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
-  const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  const grossProfit = Math.max(0, todaySalesTotal - todaySalesCost - totalExpenses);
-
-  const customerReceivables = customers.reduce((sum, c) => sum + Number(c.outstanding || 0), 0);
-  const dealerPayables = dealers.reduce((sum, d) => sum + Number(d.payable || 0), 0);
+  const todaySalesTotal = overview?.metrics.todaySales || 0;
+  const todayPurchasesTotal = overview?.metrics.todayPurchases || 0;
+  const cashReceivedTotal = overview?.metrics.cashReceived || 0;
+  const paymentsMadeTotal = overview?.metrics.paymentsMade || 0;
+  const grossProfit = overview?.metrics.todayProfit || 0;
+  const customerReceivables = overview?.metrics.receivables || 0;
+  const dealerPayables = overview?.metrics.payables || 0;
 
   const stockValue = products.reduce(
     (sum, p) => sum + Number(p.currentStock || 0) * Number(p.avgCost || p.purchaseRate || 0),
@@ -112,8 +88,8 @@ export default function Dashboard({ ownerName }: { ownerName: string }) {
 
     return {
       day: dayName,
-      sales: daySales || (i === 6 ? todaySalesTotal : 0),
-      purchases: dayPurchases || (i === 6 ? todayPurchasesTotal : 0),
+      sales: daySales,
+      purchases: dayPurchases,
     };
   });
 
@@ -168,7 +144,7 @@ export default function Dashboard({ ownerName }: { ownerName: string }) {
         <MetricCard 
           label="Cash received" 
           value={inr(cashReceivedTotal)} 
-          note="Across all payments" 
+          note="Payments received today"
           icon={<ArrowDownToLine/>} 
           tone="blue"
         />
@@ -185,12 +161,12 @@ export default function Dashboard({ ownerName }: { ownerName: string }) {
       <div className="snapshot-strip">
         <div>
           <span className="snapshot-icon mint"><IndianRupee/></span>
-          <p>Customer receivables<strong>{inr(customerReceivables)}</strong></p>
+          <p>Customer receivables<strong className="negative">{dueInr(customerReceivables)}</strong></p>
           <Link to="/customers">View outstanding <ArrowRight/></Link>
         </div>
         <div>
           <span className="snapshot-icon peach"><BadgeIndianRupee/></span>
-          <p>Dealer payables<strong>{inr(dealerPayables)}</strong></p>
+          <p>Dealer payables<strong className="negative">{dueInr(dealerPayables)}</strong></p>
           <Link to="/dealers">View payables <ArrowRight/></Link>
         </div>
         <div>

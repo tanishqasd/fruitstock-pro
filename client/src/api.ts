@@ -30,5 +30,13 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
 export const post = <T>(path: string, body: unknown) => api<T>(path, { method: 'POST', body: JSON.stringify(body) });
 
-export const inr = (value: number | string | undefined, compact = false) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0, notation: compact ? 'compact' : 'standard' }).format(Number(value || 0));
+export const inr = (value: number | string | undefined, compact = false) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2, notation: compact ? 'compact' : 'standard' }).format(Number(value || 0));
+export const dueInr = (value: number | string | undefined) => {
+  const amount = Number(value || 0);
+  return inr(amount === 0 ? 0 : -amount);
+};
+export const todayDate = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
 export const shortDate = (date: string | Date) => new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(date));

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { BarChart3, Download, PackageSearch, TrendingUp, UsersRound, ArrowUpRight } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useNavigate } from 'react-router-dom';
-import { api, inr } from '../api';
+import { api, dueInr, inr } from '../api';
 import type { Customer, Dealer, Product, Purchase, Sale } from '../types';
 import { FruitAvatar, Loader, LoadError, PageHeader, Status } from '../components';
 
@@ -37,7 +37,7 @@ export default function Reports() {
   const sales = data.sales.reduce((s, x) => s + Number(x.totalAmount), 0);
   const cost = data.sales.reduce((s, x) => s + Number(x.costAmount), 0);
   const profit = sales - cost;
-  const totalOutstanding = data.customers.reduce((s, x) => s + Number(x.outstanding), 0);
+  const totalOutstanding = data.customers.reduce((s, x) => s + Math.max(0, Number(x.outstanding)), 0);
   const totalStockValue = data.products.reduce(
     (s, x) => s + Number(x.currentStock) * Number(x.avgCost),
     0
@@ -97,7 +97,7 @@ export default function Reports() {
         >
           <UsersRound />
           <span>Customer outstanding</span>
-          <strong>{inr(totalOutstanding)}</strong>
+          <strong className="negative">{dueInr(totalOutstanding)}</strong>
           <small>{data.customers.filter((x) => Number(x.outstanding) > 0).length} accounts with dues →</small>
         </div>
 
@@ -152,6 +152,7 @@ export default function Reports() {
           </div>
           <div className="rank-list">
             {[...data.customers]
+              .filter(customer => Number(customer.outstanding) > 0)
               .sort((a, b) => Number(b.outstanding) - Number(a.outstanding))
               .slice(0, 6)
               .map((c, i) => (
@@ -166,7 +167,7 @@ export default function Reports() {
                     <strong>{c.name}</strong>
                     <small>{c.paymentTerms}-day payment terms</small>
                   </div>
-                  <strong>{inr(c.outstanding)}</strong>
+                  <strong className="negative">{dueInr(c.outstanding)}</strong>
                 </div>
               ))}
           </div>

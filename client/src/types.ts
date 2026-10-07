@@ -1,6 +1,6 @@
 export type Product = { id: string; name: string; variety?: string; unit: string; purchaseRate: number; sellingRate: number; avgCost: number; currentStock: number; minStock: number };
-export type Customer = { id: string; name: string; phone?: string; address?: string; creditLimit: number; paymentTerms: number; totalSales: number; totalReceived: number; outstanding: number; _count?: { sales: number } };
-export type Dealer = { id: string; name: string; phone?: string; address?: string; contactPerson?: string; totalPurchases: number; totalPaid: number; payable: number; _count?: { purchases: number } };
+export type Customer = { id: string; name: string; phone?: string; address?: string; openingBalance?: number; creditLimit: number; paymentTerms: number; totalSales: number; totalReceived: number; outstanding: number; _count?: { sales: number } };
+export type Dealer = { id: string; name: string; phone?: string; address?: string; openingBalance?: number; gstNumber?: string; bankDetails?: string; contactPerson?: string; totalPurchases: number; totalPaid: number; payable: number; _count?: { purchases: number } };
 export type Line = { id: string; productId: string; quantity: number; rate: number; amount?: number; product?: Product };
 export type Sale = { id: string; saleNo: string; date: string; totalAmount: number; receivedAmount: number; pendingAmount: number; costAmount: number; customer?: Customer; items: Line[] };
 export type Purchase = { id: string; purchaseNo: string; date: string; totalAmount: number; paidAmount: number; pendingAmount: number; dealer: Dealer; items: Line[] };
