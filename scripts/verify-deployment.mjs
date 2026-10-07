@@ -86,6 +86,12 @@ test('production serves the SPA, assets and JSON API errors; unhealthy DB return
     const missingApi = await fetch(`${base}/api/missing`, {
       headers: { Authorization: `Bearer ${jwt.sign({ id: 'verification' }, testSecret)}` }
     });
+    for (const party of ['customers', 'dealers']) {
+      for (const [route, method] of [[`/api/${party}/account/payments/payment`, 'PUT'], [`/api/${party}/account/balance-adjustments`, 'POST']]) {
+        assert.equal((await fetch(`${base}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+        assert.equal((await fetch(`${base}${route}`, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt.sign({ id: 'verification' }, testSecret)}` }, body: '{}' })).status, 400);
+      }
+    }
     assert.equal(missingApi.status, 404);
     assert.equal((await missingApi.json()).message, 'API endpoint not found');
     const badLogin = await fetch(`${base}/api/auth/login`, {

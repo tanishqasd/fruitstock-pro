@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { access } from 'node:fs/promises';
 import { asyncRoute, auth, money, prisma, serial } from './lib.js';
 import { customerAccount, dealerAccount } from './accounting.js';
-import { PaymentError, paymentFields, paymentInput, recordPayment } from './payments.js';
+import { PaymentError, paymentFields, paymentInput, recordPayment, paymentEditInput, balanceInput, editPayment, adjustBalance } from './payments.js';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -38,7 +38,7 @@ app.get('/api/health', asyncRoute(async (_req, res) => {
       prisma.user.findFirst(), prisma.product.findFirst(), prisma.dealer.findFirst(),
       prisma.customer.findFirst(), prisma.purchase.findFirst(), prisma.purchaseItem.findFirst(),
       prisma.sale.findFirst(), prisma.saleItem.findFirst(), prisma.payment.findFirst(),
-      prisma.stockTransaction.findFirst(), prisma.expense.findFirst()
+      prisma.stockTransaction.findFirst(), prisma.expense.findFirst(), prisma.balanceAdjustment.findFirst(), prisma.paymentEdit.findFirst()
     ]);
     res.json({ status: 'ok', service: 'fruitstock-api', database: 'ok', frontend: 'ok' });
   } catch {
@@ -76,8 +76,8 @@ app.get('/api/dashboard', asyncRoute(async (_req, res) => {
     prisma.purchase.aggregate({ where: { date: { gte: start } }, _sum: { totalAmount: true } }),
     prisma.payment.aggregate({ where: { direction: 'RECEIVED', date: { gte: start } }, _sum: { amount: true } }),
     prisma.payment.aggregate({ where: { direction: 'PAID', date: { gte: start } }, _sum: { amount: true } }),
-    prisma.customer.findMany({ include: { sales: true, payments: true } }),
-    prisma.dealer.findMany({ include: { purchases: true, payments: true } }),
+    prisma.customer.findMany({ include: { sales: true, payments: true, adjustments: true } }),
+    prisma.dealer.findMany({ include: { purchases: true, payments: true, adjustments: true } }),
     prisma.product.findMany({ orderBy: { currentStock: 'asc' } }),
     prisma.sale.findMany({ take: 5, orderBy: { date: 'desc' }, include: { customer: true, items: { include: { product: true } } } }),
     prisma.purchase.findMany({ take: 5, orderBy: { date: 'desc' }, include: { dealer: true, items: { include: { product: true } } } }),
@@ -122,7 +122,7 @@ app.patch('/api/products/:id', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/customers', asyncRoute(async (_req, res) => {
-  const rows = await prisma.customer.findMany({ include: { _count: { select: { sales: true } }, sales: true, payments: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
+  const rows = await prisma.customer.findMany({ include: { _count: { select: { sales: true } }, sales: true, payments: true, adjustments: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
   res.json(rows.map(row => { const { sales, payments, ...account } = customerAccount(row); return account; }));
 }));
 
@@ -134,7 +134,8 @@ app.post('/api/customers', asyncRoute(async (req, res) => {
 app.get('/api/customers/:id', asyncRoute(async (req, res) => {
   const customer = await prisma.customer.findUniqueOrThrow({ where: { id: String(req.params.id) }, include: {
     sales: { orderBy: { date: 'desc' }, include: { items: { include: { product: true } } } },
-    payments: { orderBy: { date: 'desc' } }
+    payments: { orderBy: { date: 'desc' }, include: { edits: { orderBy: { createdAt: 'desc' }, include: { createdBy: { select: { name: true } } } } } },
+    adjustments: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
   } });
   res.json(customerAccount(customer));
 }));
@@ -152,7 +153,7 @@ app.put('/api/customers/:id', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/dealers', asyncRoute(async (_req, res) => {
-  const rows = await prisma.dealer.findMany({ include: { _count: { select: { purchases: true } }, purchases: true, payments: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
+  const rows = await prisma.dealer.findMany({ include: { _count: { select: { purchases: true } }, purchases: true, payments: true, adjustments: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
   res.json(rows.map(row => { const { purchases, payments, ...account } = dealerAccount(row); return account; }));
 }));
 
@@ -164,7 +165,8 @@ app.post('/api/dealers', asyncRoute(async (req, res) => {
 app.get('/api/dealers/:id', asyncRoute(async (req, res) => {
   const dealer = await prisma.dealer.findUniqueOrThrow({ where: { id: String(req.params.id) }, include: {
     purchases: { orderBy: { date: 'desc' }, include: { items: { include: { product: true } } } },
-    payments: { orderBy: { date: 'desc' } }
+    payments: { orderBy: { date: 'desc' }, include: { edits: { orderBy: { createdAt: 'desc' }, include: { createdBy: { select: { name: true } } } } } },
+    adjustments: { orderBy: [{ date: 'desc' }, { createdAt: 'desc' }] }
   } });
   res.json(dealerAccount(dealer));
 }));
@@ -173,6 +175,17 @@ app.post('/api/dealers/:id/payments', asyncRoute(async (req, res) => {
   const input = paymentFields.parse(req.body);
   res.status(201).json(await recordPayment({ ...input, direction: 'PAID', dealerId: String(req.params.id) }, true));
 }));
+
+for (const [endpoint, kind] of [['customers', 'customer'], ['dealers', 'dealer']] as const) {
+  app.put(`/api/${endpoint}/:id/payments/:paymentId`, asyncRoute(async (req, res) => {
+    const actorId = (req as typeof req & { user: { id: string } }).user.id;
+    res.json(await editPayment(kind, String(req.params.id), String(req.params.paymentId), paymentEditInput.parse(req.body), actorId));
+  }));
+  app.post(`/api/${endpoint}/:id/balance-adjustments`, asyncRoute(async (req, res) => {
+    const actorId = (req as typeof req & { user: { id: string } }).user.id;
+    res.status(201).json(await adjustBalance(kind, String(req.params.id), balanceInput.parse(req.body), actorId));
+  }));
+}
 
 app.put('/api/dealers/:id', asyncRoute(async (req, res) => {
   const input = z.object({ name: z.string().min(2).optional(), phone: z.string().optional(), address: z.string().optional(),
@@ -185,7 +198,7 @@ const lineSchema = z.object({ productId: z.string(), quantity: z.coerce.number()
 app.get('/api/purchases', asyncRoute(async (_req, res) => {
   const [rows, dealers] = await Promise.all([
     prisma.purchase.findMany({ include: { dealer: true, items: { include: { product: true } } }, orderBy: { date: 'desc' } }),
-    prisma.dealer.findMany({ include: { purchases: true, payments: true } })
+    prisma.dealer.findMany({ include: { purchases: true, payments: true, adjustments: true } })
   ]);
   const settled = new Map(dealers.flatMap(dealer => dealerAccount(dealer).purchases.map(invoice => [invoice.id, invoice] as const)));
   res.json(rows.map(row => ({ ...row, paidAmount: settled.get(row.id)?.paidAmount ?? row.paidAmount,
@@ -217,7 +230,7 @@ app.post('/api/purchases', asyncRoute(async (req, res) => {
 app.get('/api/sales', asyncRoute(async (_req, res) => {
   const [rows, customers] = await Promise.all([
     prisma.sale.findMany({ include: { customer: true, items: { include: { product: true } } }, orderBy: { date: 'desc' } }),
-    prisma.customer.findMany({ include: { sales: true, payments: true } })
+    prisma.customer.findMany({ include: { sales: true, payments: true, adjustments: true } })
   ]);
   const settled = new Map(customers.flatMap(customer => customerAccount(customer).sales.map(invoice => [invoice.id, invoice] as const)));
   res.json(rows.map(row => ({ ...row, receivedAmount: settled.get(row.id)?.receivedAmount ?? row.receivedAmount,
@@ -279,11 +292,12 @@ app.post('/api/expenses', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/transactions', asyncRoute(async (_req, res) => {
-  const [sales, purchases, expenses, payments] = await Promise.all([
+  const [sales, purchases, expenses, payments, adjustments] = await Promise.all([
     prisma.sale.findMany({ include: { customer: true } }),
     prisma.purchase.findMany({ include: { dealer: true } }),
     prisma.expense.findMany(),
-    prisma.payment.findMany({ include: { customer: true, dealer: true } })
+    prisma.payment.findMany({ include: { customer: true, dealer: true } }),
+    prisma.balanceAdjustment.findMany({ include: { customer: true, dealer: true } })
   ]);
   const paymentMode = (reference: string, direction: 'RECEIVED' | 'PAID', partyId: string | null) => payments.find(payment =>
     payment.reference === reference && payment.direction === direction && (direction === 'RECEIVED' ? payment.customerId === partyId : payment.dealerId === partyId))?.mode || 'UNPAID';
@@ -297,7 +311,12 @@ app.get('/api/transactions', asyncRoute(async (_req, res) => {
     ...payments.map(payment => ({ id: payment.id, transactionType: 'PAYMENT', date: payment.date,
       partyName: payment.direction === 'RECEIVED' ? payment.customer?.name || 'Walk-in customer' : payment.dealer?.name || 'Dealer',
       category: payment.direction === 'RECEIVED' ? 'Customer receipt' : 'Dealer payment', amount: money(payment.amount),
-      paymentMode: payment.mode, reference: payment.reference || payment.id, direction: payment.direction === 'RECEIVED' ? 'IN' : 'OUT' }))
+      paymentMode: payment.mode, reference: payment.reference || payment.id, direction: payment.direction === 'RECEIVED' ? 'IN' : 'OUT' })),
+    ...adjustments.map(adjustment => ({ id: adjustment.id, transactionType: 'ADJUSTMENT', date: adjustment.date,
+      partyName: adjustment.customer?.name || adjustment.dealer?.name || 'Account',
+      category: `${money(adjustment.amount) > 0 ? 'Increase due' : 'Reduce due'}: ${adjustment.reason}`,
+      amount: Math.abs(money(adjustment.amount)), paymentMode: 'NO CASH MOVEMENT', reference: adjustment.id,
+      direction: money(adjustment.amount) > 0 ? 'IN' : 'OUT' }))
   ];
   res.json(rows.sort((a, b) => b.date.getTime() - a.date.getTime()));
 }));

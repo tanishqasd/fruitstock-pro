@@ -8,8 +8,9 @@ const decimal = (value: Money) => new Prisma.Decimal(value);
 
 // Payment records are the source of truth. Linked invoice receipts are allocated
 // first, then unallocated receipts settle opening dues and the oldest invoices.
-export function accountProjection<T extends Invoice>(opening: Money, invoices: T[], payments: Payment[], direction: 'RECEIVED' | 'PAID') {
-  const openingBalance = decimal(opening);
+export function accountProjection<T extends Invoice>(opening: Money, invoices: T[], payments: Payment[], direction: 'RECEIVED' | 'PAID', adjustments: { amount: Money }[] = []) {
+  const adjustmentTotal = adjustments.reduce((sum, row) => sum.plus(row.amount), decimal(0));
+  const openingBalance = decimal(opening).plus(adjustmentTotal);
   const received = payments.filter(payment => payment.direction === direction);
   const totalInvoiced = invoices.reduce((sum, invoice) => sum.plus(invoice.totalAmount), decimal(0));
   const totalPaid = received.reduce((sum, payment) => sum.plus(payment.amount), decimal(0));
@@ -35,6 +36,7 @@ export function accountProjection<T extends Invoice>(opening: Money, invoices: T
   }
   return {
     totalInvoiced: totalInvoiced.toNumber(), totalPaid: totalPaid.toNumber(),
+    adjustmentTotal: adjustmentTotal.toNumber(),
     balance: openingBalance.plus(totalInvoiced).minus(totalPaid).toNumber(),
     openingDue: Prisma.Decimal.max(openingBalance, 0).minus(openingSettled).toNumber(),
     invoices: invoices.map(invoice => ({ ...invoice,
@@ -44,20 +46,20 @@ export function accountProjection<T extends Invoice>(opening: Money, invoices: T
   };
 }
 
-export function customerAccount<T extends { openingBalance: Money; sales: Invoice[]; payments: Payment[] }>(customer: T) {
+export function customerAccount<T extends { openingBalance: Money; sales: Invoice[]; payments: Payment[]; adjustments?: { amount: Money }[] }>(customer: T) {
   const { sales, payments, ...record } = customer;
-  const account = accountProjection(customer.openingBalance, sales, payments, 'RECEIVED');
+  const account = accountProjection(customer.openingBalance, sales, payments, 'RECEIVED', customer.adjustments);
   return { ...record, totalSales: account.totalInvoiced, totalReceived: account.totalPaid,
-    outstanding: account.balance, outstandingBalance: account.balance, openingDue: account.openingDue,
+    outstanding: account.balance, outstandingBalance: account.balance, openingDue: account.openingDue, adjustmentTotal: account.adjustmentTotal,
     sales: account.invoices.map(invoice => ({ ...invoice, receivedAmount: invoice.settledAmount })),
     payments: payments.filter(payment => payment.direction === 'RECEIVED') };
 }
 
-export function dealerAccount<T extends { openingBalance: Money; purchases: Invoice[]; payments: Payment[] }>(dealer: T) {
+export function dealerAccount<T extends { openingBalance: Money; purchases: Invoice[]; payments: Payment[]; adjustments?: { amount: Money }[] }>(dealer: T) {
   const { purchases, payments, ...record } = dealer;
-  const account = accountProjection(dealer.openingBalance, purchases, payments, 'PAID');
+  const account = accountProjection(dealer.openingBalance, purchases, payments, 'PAID', dealer.adjustments);
   return { ...record, totalPurchases: account.totalInvoiced, totalPaid: account.totalPaid,
-    payable: account.balance, balanceDue: account.balance, openingDue: account.openingDue,
+    payable: account.balance, balanceDue: account.balance, openingDue: account.openingDue, adjustmentTotal: account.adjustmentTotal,
     purchases: account.invoices.map(invoice => ({ ...invoice, paidAmount: invoice.settledAmount })),
     payments: payments.filter(payment => payment.direction === 'PAID') };
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../dist/lib.js';
-import { recordPayment, PaymentError } from '../dist/payments.js';
+import { recordPayment, editPayment, adjustBalance, PaymentError } from '../dist/payments.js';
 import { customerAccount, dealerAccount } from '../dist/accounting.js';
 
 // All fixtures live inside one transaction that is ALWAYS rolled back. This
@@ -14,6 +14,7 @@ let verified = false;
 const fixtures = [];
 try {
   await prisma.$transaction(async tx => {
+    const actor = await tx.user.create({ data: { name: marker, email: `${marker}@example.test`, passwordHash: 'rollback-only-test' } });
     const c = await tx.customer.create({ data: { name: marker, openingBalance: 100 } });
     const sameName = await tx.customer.create({ data: { name: marker, openingBalance: 75 } });
     const d = await tx.dealer.create({ data: { name: marker, openingBalance: 50 } });
@@ -43,7 +44,8 @@ try {
       error => error instanceof PaymentError && error.status === 404);
     assert.equal((await recordPayment({ direction: 'RECEIVED', customerId: c.id, amount: 600, mode: 'CASH' }, true, database)).accountBalance, 0);
     assert.equal((await tx.sale.findUniqueOrThrow({ where: { id: sale.id } })).pendingAmount.toNumber(), 0);
-    assert.equal((await recordPayment({ direction: 'PAID', dealerId: d.id, amount: 100, mode: 'UPI' }, true, database)).accountBalance, 350);
+    const dealerPartial = await recordPayment({ direction: 'PAID', dealerId: d.id, amount: 100, mode: 'UPI' }, true, database);
+    assert.equal(dealerPartial.accountBalance, 350);
     assert.equal((await recordPayment({ direction: 'PAID', dealerId: d.id, amount: 350, mode: 'CASH' }, true, database)).accountBalance, 0);
     assert.equal((await tx.purchase.findUniqueOrThrow({ where: { id: purchase.id } })).pendingAmount.toNumber(), 0);
     const customer = customerAccount(await tx.customer.findUniqueOrThrow({ where: { id: c.id }, include: { sales: true, payments: true } }));
@@ -59,6 +61,26 @@ try {
     assert.equal(dealer.totalPaid, 550);
     // General ledger receipts continue to support advances as account credit.
     assert.equal((await recordPayment({ direction: 'RECEIVED', customerId: c.id, amount: 20, mode: 'CASH' }, false, database)).accountBalance, -20);
+    const correction = { amount: 150, mode: 'UPI', date: new Date('2025-12-01T00:00:00Z'), expectedVersion: 0, reason: 'Correct mistyped receipt' };
+    assert.equal((await editPayment('customer', c.id, partial.id, correction, actor.id, database)).accountBalance, 130);
+    assert.equal((await tx.sale.findUniqueOrThrow({ where: { id: sale.id } })).pendingAmount.toNumber(), 130);
+    const audit = await tx.paymentEdit.findFirstOrThrow({ where: { paymentId: partial.id } });
+    assert.equal(audit.before.amount, '300'); assert.equal(audit.after.amount, '150'); assert.equal(audit.createdById, actor.id);
+    await assert.rejects(editPayment('customer', c.id, partial.id, correction, actor.id, database), error => error.status === 409);
+    await assert.rejects(editPayment('customer', sameName.id, partial.id, correction, actor.id, database), error => error.status === 404);
+    assert.equal((await editPayment('dealer', d.id, dealerPartial.id, { amount: 0, mode: 'UPI', expectedVersion: 0, reason: 'Reverse incorrect payout' }, actor.id, database)).accountBalance, 100);
+    assert.equal((await tx.purchase.findUniqueOrThrow({ where: { id: purchase.id } })).pendingAmount.toNumber(), 100);
+    const dated = { operation: 'ADD_DUE', amount: 50, expectedBalance: 100, date: new Date('2025-11-01T00:00:00Z'), reason: 'Missing historic supplier dues' };
+    const adjustment = await adjustBalance('dealer', d.id, dated, actor.id, database);
+    assert.equal(adjustment.accountBalance, 150); assert.equal(adjustment.date.toISOString(), dated.date.toISOString());
+    assert.equal((await adjustBalance('dealer', d.id, { ...dated, operation: 'SET_BALANCE', amount: 25, expectedBalance: 150 }, actor.id, database)).accountBalance, 25);
+    await assert.rejects(adjustBalance('dealer', d.id, { ...dated, operation: 'SET_BALANCE', amount: 10, expectedBalance: 150 }, actor.id, database), error => error.status === 409);
+    assert.equal((await adjustBalance('dealer', d.id, { ...dated, operation: 'REDUCE_DUE', amount: 50, expectedBalance: 25 }, actor.id, database)).accountBalance, -25);
+    assert.equal((await adjustBalance('customer', c.id, { ...dated, operation: 'SET_BALANCE', amount: 500.25, expectedBalance: 130 }, actor.id, database)).accountBalance, 500.25);
+    const finalCustomer = customerAccount(await tx.customer.findUniqueOrThrow({ where: { id: c.id }, include: { sales: true, payments: true, adjustments: true } }));
+    assert.equal(finalCustomer.outstanding, 500.25); assert.equal(finalCustomer.totalReceived, 970); assert.equal(finalCustomer.adjustmentTotal, 370.25);
+    assert.equal(await tx.paymentEdit.count({ where: { createdById: actor.id } }), 2);
+    assert.equal(await tx.balanceAdjustment.count({ where: { createdById: actor.id } }), 4);
     verified = true;
     throw rollback;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
@@ -68,7 +90,8 @@ try {
   if (verified) {
     assert.equal(await prisma.customer.count({ where: { id: { in: fixtures } } }), 0);
     assert.equal(await prisma.dealer.count({ where: { id: { in: fixtures } } }), 0);
-    console.log('PASS: customer/dealer partial and full payments, invoice reconciliation, same-name isolation, overpayment rejection and credit; all test rows rolled back.');
+    assert.equal(await prisma.user.count({ where: { email: `${marker}@example.test` } }), 0);
+    console.log('PASS: payments, audited edits and reversals, dated balance adjustments, exact current balance, stale edit protection, account isolation and credit; all test rows rolled back.');
   }
   await prisma.$disconnect();
 }

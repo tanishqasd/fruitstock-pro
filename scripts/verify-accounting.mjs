@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { accountProjection, customerAccount, dealerAccount } from '../server/dist/accounting.js';
-import { paymentFields, paymentInput } from '../server/dist/payments.js';
+import { paymentFields, paymentInput, paymentEditInput, balanceInput } from '../server/dist/payments.js';
 
 const invoice = (id, totalAmount, date = '2026-01-01') => ({ id, totalAmount, date, saleNo: id });
 const receipt = (amount, reference, direction = 'RECEIVED') => ({ amount, reference, direction });
@@ -59,4 +59,16 @@ test('payment inputs reject wrong-party associations and invalid money, includin
     { direction: 'RECEIVED', customerId: 'customer', dealerId: 'dealer' },
     { direction: 'RECEIVED' }
   ]) assert.equal(paymentInput.safeParse({ ...input, amount: 10 }).success, false);
+});
+
+test('dated balance adjustments change account dues without creating cash receipts', () => {
+  const adjusted = accountProjection(100, [invoice('bill', 1000)], [receipt(200, 'bill')], 'RECEIVED', [{ amount: 50.25 }, { amount: -10 }]);
+  assert.equal(adjusted.balance, 940.25); assert.equal(adjusted.totalPaid, 200); assert.equal(adjusted.adjustmentTotal, 40.25);
+  const credit = accountProjection(0, [invoice('bill', 100)], [receipt(10)], 'RECEIVED', [{ amount: -120 }]);
+  assert.equal(credit.balance, -30); assert.equal(credit.invoices[0].pendingAmount, 0);
+  const input = { operation: 'SET_BALANCE', amount: -50.25, expectedBalance: 200, date: '2025-01-01', reason: 'Historic credit correction' };
+  assert.equal(balanceInput.safeParse(input).success, true);
+  assert.equal(balanceInput.safeParse({ ...input, operation: 'ADD_DUE' }).success, false);
+  assert.equal(paymentEditInput.safeParse({ amount: 0, expectedVersion: 0, reason: 'Reverse wrong receipt' }).success, true);
+  assert.equal(paymentEditInput.safeParse({ amount: 20, reason: 'Missing version' }).success, false);
 });
