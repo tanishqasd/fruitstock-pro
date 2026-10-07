@@ -41,3 +41,5 @@
 .payment-fields{border:0;padding:0;margin:0;min-width:0}
 
 td.negative strong,.snapshot-strip p strong.negative{color:var(--red)}td.positive strong{color:var(--green)}
+.correction-entry{padding:12px;border:1px solid var(--line);border-radius:8px;font-size:13px}.correction-entry span{display:block;margin-top:5px;color:var(--muted)}.party-actions{flex-wrap:wrap}
+@media(max-width:600px){body{font-size:15px}.page-header h1{font-size:26px}.page-header p{font-size:14px}.btn,.btn.compact{font-size:14px}.sidebar nav a,.sidebar-bottom>button{font-size:15px}.metric-value{font-size:24px}.table-scroll table,.table-scroll td{font-size:14px}.table-scroll th{font-size:12px}.party-name{font-size:16px}.party-table td::before,.balance-caption{font-size:12px}.modal-head h2{font-size:18px}.field>span{font-size:14px}.account-history h3{font-size:16px}.account-totals span,.payment-preview{font-size:14px}.account-totals b{font-size:17px}.payment-account strong{font-size:16px}.payment-account span{font-size:14px}.snapshot-strip p strong,.summary-row span strong{font-size:18px}.report-cards>div strong{font-size:20px}}

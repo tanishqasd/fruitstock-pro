@@ -4,7 +4,9 @@ export type Dealer = { id: string; name: string; phone?: string; address?: strin
 export type Line = { id: string; productId: string; quantity: number; rate: number; amount?: number; product?: Product };
 export type Sale = { id: string; saleNo: string; date: string; totalAmount: number; receivedAmount: number; pendingAmount: number; costAmount: number; customer?: Customer; items: Line[] };
 export type Purchase = { id: string; purchaseNo: string; date: string; totalAmount: number; paidAmount: number; pendingAmount: number; dealer: Dealer; items: Line[] };
-export type Payment = { id: string; direction: 'RECEIVED'|'PAID'; amount: number; mode: string; date: string; reference?: string; customer?: Customer; dealer?: Dealer };
+export type PaymentEdit = { id: string; reason: string; before: { amount: string; date: string }; after: { amount: string; date: string }; createdAt: string; createdBy?: { name: string } };
+export type BalanceAdjustment = { id: string; amount: number; date: string; reason: string };
+export type Payment = { id: string; direction: 'RECEIVED'|'PAID'; amount: number; mode: string; date: string; reference?: string; notes?: string; version: number; edits?: PaymentEdit[]; customer?: Customer; dealer?: Dealer };
 export type StockEntry = { id: string; type: string; quantity: number; unitCost?: number; reference?: string; reason?: string; date: string; product: Product };
 export type Dashboard = { metrics: { todaySales: number; todayPurchases: number; cashReceived: number; paymentsMade: number; receivables: number; payables: number; stockValue: number; todayProfit: number }; lowStock: Product[]; recentSales: Sale[]; recentPurchases: Purchase[] };
 export interface Expense {

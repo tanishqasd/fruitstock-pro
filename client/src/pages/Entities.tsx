@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { CreditCard, Edit2, History, Plus, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api, dueInr, inr, post, shortDate } from '../api';
-import type { Customer, Dealer, Payment, Purchase, Sale } from '../types';
+import type { BalanceAdjustment, Customer, Dealer, Payment, Purchase, Sale } from '../types';
 import { Field, Loader, LoadError, Modal, PageHeader, SearchBox } from '../components';
 import AccountPaymentDialog from '../components/AccountPaymentDialog';
+import BalanceAdjustmentDialog from '../components/BalanceAdjustmentDialog';
 
 type Party = Customer | Dealer;
-type Details = Party & { sales?: Sale[]; purchases?: Purchase[]; payments: Payment[]; openingDue?: number };
+type Details = Party & { sales?: Sale[]; purchases?: Purchase[]; payments: Payment[]; adjustments: BalanceAdjustment[]; adjustmentTotal: number; openingDue?: number };
 const emptyForm = { name: '', phone: '', address: '', creditLimit: 0, gstNumber: '', bankDetails: '' };
 
 function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
@@ -22,6 +23,8 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
   const [editTarget, setEditTarget] = useState<Party | null>(null);
   const [historyTarget, setHistoryTarget] = useState<Details | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<Party | null>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment>();
+  const [balanceTarget, setBalanceTarget] = useState<Party | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [checkingId, setCheckingId] = useState('');
@@ -42,13 +45,14 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
     setEditTarget(party);
   }
 
-  async function openAccount(party: Party, action: 'history' | 'payment') {
+  async function openAccount(party: Party, action: 'history' | 'payment' | 'balance') {
     const current = ++request.current;
     setCheckingId(party.id);
     try {
       const details = await api<Details>(`${endpoint}/${party.id}`);
       if (current !== request.current) return;
       if (action === 'history') setHistoryTarget(details);
+      else if (action === 'balance') setBalanceTarget(details);
       else if (balanceOf(details) <= 0) { toast('This account has no outstanding dues'); await load(); }
       else setPaymentTarget(details);
     } catch (error) { if (current === request.current) toast.error((error as Error).message); }
@@ -73,10 +77,15 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
   }
 
   async function paymentSaved() {
+    const historyId = historyTarget?.id;
+    const current = ++request.current;
     await load();
-    if (historyTarget) {
-      try { setHistoryTarget(await api<Details>(`${endpoint}/${historyTarget.id}`)); }
-      catch (error) { setHistoryTarget(null); toast.error((error as Error).message); }
+    if (historyId) {
+      try {
+        const details = await api<Details>(`${endpoint}/${historyId}`);
+        if (current === request.current) setHistoryTarget(details);
+      }
+      catch (error) { if (current === request.current) { setHistoryTarget(null); toast.error((error as Error).message); } }
     }
   }
 
@@ -110,6 +119,7 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
                 <button className="btn compact primary" disabled={balance <= 0 || Boolean(checkingId)} onClick={() => void openAccount(party, 'payment')}
                   aria-label={`Record payment for ${party.name}`}><CreditCard size={16} />{checkingId === party.id ? 'Checking…' : 'Record payment'}</button>
                 <button className="btn compact secondary" disabled={Boolean(checkingId)} onClick={() => void openAccount(party, 'history')}><History size={16} /> History</button>
+                <button className="btn compact secondary" disabled={Boolean(checkingId)} onClick={() => void openAccount(party, 'balance')}><Edit2 size={16} /> Adjust balance</button>
                 <button className="btn compact secondary" onClick={() => openEdit(party)}><Edit2 size={16} /> Edit details</button>
               </div></td>
             </tr>;
@@ -133,14 +143,16 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
     </Modal>
 
     <Modal wide title={`${historyTarget?.name || 'Account'} — Transaction history`} subtitle={`Contact: ${historyTarget?.phone || 'Not provided'} | ${historyTarget?.address || 'No address'}`}
-      open={Boolean(historyTarget) && !paymentTarget} onClose={() => setHistoryTarget(null)}>
+      open={Boolean(historyTarget) && !paymentTarget && !balanceTarget} onClose={() => { request.current++; setHistoryTarget(null); }}>
       <div className="account-history">
         <div className="account-history-heading"><div className="summary-row"><div><Users /><span>Account balance<strong className={historyBalance > 0 ? 'negative' : 'positive'}>{dueInr(historyBalance)}</strong></span></div></div>
-          <button className="btn primary" disabled={historyBalance <= 0 || Boolean(checkingId)} onClick={() => historyTarget && void openAccount(historyTarget, 'payment')}><CreditCard size={17} /> Record payment</button></div>
+          <button className="btn primary" disabled={historyBalance <= 0 || Boolean(checkingId)} onClick={() => historyTarget && void openAccount(historyTarget, 'payment')}><CreditCard size={17} /> Record payment</button>
+          <button className="btn secondary" disabled={Boolean(checkingId)} onClick={() => historyTarget && void openAccount(historyTarget, 'balance')}>Adjust balance</button></div>
         <div className="account-totals"><span>Opening balance <b>{dueInr(historyTarget?.openingBalance)}</b></span>
           <span>Total {isCustomer ? 'sales' : 'purchases'} <b>{inr(isCustomer ? (historyTarget as Customer | null)?.totalSales : (historyTarget as Dealer | null)?.totalPurchases)}</b></span>
-          <span>Total {isCustomer ? 'received' : 'paid'} <b>{inr(isCustomer ? (historyTarget as Customer | null)?.totalReceived : (historyTarget as Dealer | null)?.totalPaid)}</b></span></div>
-        <p className="balance-explanation">Balance = opening balance + {isCustomer ? 'sales' : 'purchases'} − payments. Later payments settle opening dues first, then the oldest bills.</p>
+          <span>Total {isCustomer ? 'received' : 'paid'} <b>{inr(isCustomer ? (historyTarget as Customer | null)?.totalReceived : (historyTarget as Dealer | null)?.totalPaid)}</b></span>
+          <span>Balance adjustments <b>{dueInr(historyTarget?.adjustmentTotal)}</b></span></div>
+        <p className="balance-explanation">Balance = opening balance + {isCustomer ? 'sales' : 'purchases'} + adjustments − payments. Payments settle account dues, then the oldest unpaid bills.</p>
         <h3>Invoices and vouchers</h3>
         <div className="table-scroll"><table><thead><tr><th>Date</th><th>Bill number</th><th>Total</th><th>{isCustomer ? 'Received' : 'Paid'}</th><th>Due</th></tr></thead>
           <tbody>{invoices?.map(invoice => <tr key={invoice.id}><td>{shortDate(invoice.date)}</td><td className="ref">{'saleNo' in invoice ? invoice.saleNo : invoice.purchaseNo}</td>
@@ -148,13 +160,22 @@ function EntitiesView({ kind }: { kind: 'customer' | 'dealer' }) {
             <td className={Number(invoice.pendingAmount) > 0 ? 'negative' : 'positive'}>{dueInr(invoice.pendingAmount)}</td></tr>)}
             {!invoices?.length && <tr><td colSpan={5} className="empty-row">No invoices recorded yet.</td></tr>}</tbody></table></div>
         <h3>Payment records</h3>
-        <div className="table-scroll"><table><thead><tr><th>Payment date</th><th>Mode</th><th>Reference</th><th>Amount settled</th></tr></thead><tbody>
-          {historyTarget?.payments.map(payment => <tr key={payment.id}><td>{shortDate(payment.date)}</td><td>{payment.mode.replaceAll('_', ' ')}</td><td>{payment.reference || 'Settlement'}</td><td className="positive">{inr(payment.amount)}</td></tr>)}
-          {!historyTarget?.payments.length && <tr><td colSpan={4} className="empty-row">No payments recorded yet.</td></tr>}
+        <div className="table-scroll"><table><thead><tr><th>Payment date</th><th>Mode</th><th>Reference</th><th>Amount settled</th><th>Actions</th></tr></thead><tbody>
+          {historyTarget?.payments.map(payment => <tr key={payment.id}><td>{shortDate(payment.date)}</td><td>{payment.mode.replaceAll('_', ' ')}</td><td>{payment.reference || 'Settlement'}</td><td className="positive">{inr(payment.amount)}</td><td><button className="btn compact secondary" aria-label={`Edit payment ${payment.reference || payment.id}`} onClick={() => { setEditingPayment(payment); setPaymentTarget(historyTarget); }}>Edit payment</button></td></tr>)}
+          {!historyTarget?.payments.length && <tr><td colSpan={5} className="empty-row">No payments recorded yet.</td></tr>}
         </tbody></table></div>
+        <h3>Dated balance adjustments</h3>
+        <div className="table-scroll"><table><thead><tr><th>Effective date</th><th>Change to dues</th><th>Reason</th></tr></thead><tbody>
+          {historyTarget?.adjustments?.map(row => <tr key={row.id}><td>{shortDate(row.date)}</td><td className={Number(row.amount) > 0 ? 'negative' : 'positive'}>{dueInr(row.amount)}</td><td>{row.reason}</td></tr>)}
+          {!historyTarget?.adjustments?.length && <tr><td colSpan={3} className="empty-row">No balance adjustments recorded.</td></tr>}
+        </tbody></table></div>
+        <h3>Payment correction history</h3>
+        {historyTarget?.payments.flatMap(payment => (payment.edits || []).map(edit => <p className="correction-entry" key={edit.id}><strong>{payment.reference || 'Payment'}: {inr(edit.before.amount)} → {inr(edit.after.amount)}</strong><span>{edit.reason} · {shortDate(edit.createdAt)} · {edit.createdBy?.name || 'Owner'}</span><span>Payment date: {shortDate(edit.before.date)} → {shortDate(edit.after.date)}</span></p>))}
+        {!historyTarget?.payments.some(payment => payment.edits?.length) && <p className="balance-explanation">No payment corrections recorded.</p>}
       </div>
     </Modal>
-    {paymentTarget && <AccountPaymentDialog key={`${kind}:${paymentTarget.id}`} kind={kind} party={paymentTarget} onClose={() => setPaymentTarget(null)} onSaved={paymentSaved} />}
+    {paymentTarget && <AccountPaymentDialog key={`${kind}:${paymentTarget.id}:${editingPayment?.id || 'new'}`} kind={kind} party={paymentTarget} payment={editingPayment} onClose={() => { setPaymentTarget(null); setEditingPayment(undefined); }} onSaved={paymentSaved} />}
+    {balanceTarget && <BalanceAdjustmentDialog key={`${kind}:${balanceTarget.id}`} kind={kind} party={balanceTarget} onClose={() => setBalanceTarget(null)} onSaved={paymentSaved} />}
   </>;
 }
 

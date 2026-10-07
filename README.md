@@ -112,3 +112,11 @@ The legacy database had only `User` and `_prisma_migrations`, an unfinished `202
 - If the frontend was built elsewhere with a localhost `VITE_API_URL`, rebuild it without that override.
 
 Official Railway references: [Dockerfiles](https://docs.railway.com/builds/dockerfiles), [pre-deploy commands](https://docs.railway.com/deployments/pre-deploy-command), and [configuration reference](https://docs.railway.com/config-as-code/reference).
+
+### Correcting payments and account balances
+
+Open Customers or Dealers → History → Edit payment to correct an amount, date, mode or reference. A correction requires a reason and retains the old and new values with the acting owner. Set a mistaken payment to zero to reverse it. Concurrent edits are rejected until refreshed.
+
+Use Adjust balance on any account to set its current due/credit, add dues, or reduce dues. Choose an effective date (including a past date) and enter a reason. These dated adjustment records change balances and invoice reconciliation without adding cash receipts or payouts. The profile and unified ledger show the adjustment separately. The current balance includes all recorded entries; the date records when the adjustment applies, rather than providing a historical balance report.
+
+Protected routes: PUT /api/customers/:id/payments/:paymentId and PUT /api/dealers/:id/payments/:paymentId; POST /api/customers/:id/balance-adjustments and POST /api/dealers/:id/balance-adjustments. The additive account_corrections Prisma migration preserves existing accounts and payments. Deployment verifies edits, reversals, stale-version protection and backdated adjustments in a rolled-back PostgreSQL transaction.

@@ -5,7 +5,7 @@ import { Loader, LoadError, PageHeader, SearchBox } from '../components';
 
 export interface UnifiedTransaction {
   id: string;
-  transactionType: 'SALE' | 'PURCHASE' | 'EXPENSE' | 'PAYMENT';
+  transactionType: 'SALE' | 'PURCHASE' | 'EXPENSE' | 'PAYMENT' | 'ADJUSTMENT';
   date: string;
   partyName: string;
   category: string;
@@ -89,7 +89,7 @@ export function TransactionHistory() {
       <section className="panel table-panel">
         <div className="table-toolbar">
           <div className="transaction-filters">
-            {(['ALL', 'SALE', 'PURCHASE', 'PAYMENT', 'EXPENSE'] as const).map((tab) => (
+            {(['ALL', 'SALE', 'PURCHASE', 'PAYMENT', 'ADJUSTMENT', 'EXPENSE'] as const).map((tab) => (
               <button
                 key={tab}
                 className={`btn compact ${filter === tab ? 'primary' : 'secondary'}`}
