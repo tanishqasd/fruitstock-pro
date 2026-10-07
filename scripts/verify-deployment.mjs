@@ -75,6 +75,14 @@ test('production serves the SPA, assets and JSON API errors; unhealthy DB return
     const anonymous = await fetch(`${base}/api/products`);
     assert.equal(anonymous.status, 401);
     assert.equal((await anonymous.json()).message, 'Authentication required');
+    for (const route of ['/api/customers/account/payments', '/api/dealers/account/payments']) {
+      const unauthenticated = await fetch(`${base}${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"amount":10}' });
+      assert.equal(unauthenticated.status, 401, route);
+      const invalid = await fetch(`${base}${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json',
+        Authorization: `Bearer ${jwt.sign({ id: 'verification' }, testSecret)}` }, body: '{"amount":-1}' });
+      assert.equal(invalid.status, 400, route);
+      assert.ok((await invalid.json()).message);
+    }
     const missingApi = await fetch(`${base}/api/missing`, {
       headers: { Authorization: `Bearer ${jwt.sign({ id: 'verification' }, testSecret)}` }
     });

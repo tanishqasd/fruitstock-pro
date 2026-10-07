@@ -9,6 +9,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { access } from 'node:fs/promises';
 import { asyncRoute, auth, money, prisma, serial } from './lib.js';
+import { customerAccount, dealerAccount } from './accounting.js';
+import { PaymentError, paymentFields, paymentInput, recordPayment } from './payments.js';
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -69,17 +71,13 @@ app.get('/api/me', asyncRoute(async (req, res) => {
 
 app.get('/api/dashboard', asyncRoute(async (_req, res) => {
   const start = new Date(); start.setHours(0, 0, 0, 0);
-  const [todaySales, todayPurchases, todayReceived, todayPaid, salesAll, purchasesAll, receivedAll, paidAll, customerOpening, dealerOpening, products, recentSales, recentPurchases, expenses] = await Promise.all([
+  const [todaySales, todayPurchases, todayReceived, todayPaid, customers, dealers, products, recentSales, recentPurchases, expenses] = await Promise.all([
     prisma.sale.aggregate({ where: { date: { gte: start } }, _sum: { totalAmount: true, costAmount: true } }),
     prisma.purchase.aggregate({ where: { date: { gte: start } }, _sum: { totalAmount: true } }),
     prisma.payment.aggregate({ where: { direction: 'RECEIVED', date: { gte: start } }, _sum: { amount: true } }),
     prisma.payment.aggregate({ where: { direction: 'PAID', date: { gte: start } }, _sum: { amount: true } }),
-    prisma.sale.aggregate({ _sum: { totalAmount: true } }),
-    prisma.purchase.aggregate({ _sum: { totalAmount: true } }),
-    prisma.payment.aggregate({ where: { direction: 'RECEIVED' }, _sum: { amount: true } }),
-    prisma.payment.aggregate({ where: { direction: 'PAID' }, _sum: { amount: true } }),
-    prisma.customer.aggregate({ _sum: { openingBalance: true } }),
-    prisma.dealer.aggregate({ _sum: { openingBalance: true } }),
+    prisma.customer.findMany({ include: { sales: true, payments: true } }),
+    prisma.dealer.findMany({ include: { purchases: true, payments: true } }),
     prisma.product.findMany({ orderBy: { currentStock: 'asc' } }),
     prisma.sale.findMany({ take: 5, orderBy: { date: 'desc' }, include: { customer: true, items: { include: { product: true } } } }),
     prisma.purchase.findMany({ take: 5, orderBy: { date: 'desc' }, include: { dealer: true, items: { include: { product: true } } } }),
@@ -91,8 +89,8 @@ app.get('/api/dashboard', asyncRoute(async (_req, res) => {
     metrics: {
       todaySales: money(todaySales._sum.totalAmount), todayPurchases: money(todayPurchases._sum.totalAmount),
       cashReceived: money(todayReceived._sum.amount), paymentsMade: money(todayPaid._sum.amount),
-      receivables: Math.max(0, money(customerOpening._sum.openingBalance) + money(salesAll._sum.totalAmount) - money(receivedAll._sum.amount)),
-      payables: Math.max(0, money(dealerOpening._sum.openingBalance) + money(purchasesAll._sum.totalAmount) - money(paidAll._sum.amount)),
+      receivables: customers.reduce((sum, customer) => sum + Math.max(0, customerAccount(customer).outstanding), 0),
+      payables: dealers.reduce((sum, dealer) => sum + Math.max(0, dealerAccount(dealer).payable), 0),
       stockValue, todayProfit: money(todaySales._sum.totalAmount) - money(todaySales._sum.costAmount) - money(expenses._sum.amount)
     },
     lowStock: products.filter(p => money(p.currentStock) <= money(p.minStock)).slice(0, 5),
@@ -124,8 +122,8 @@ app.patch('/api/products/:id', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/customers', asyncRoute(async (_req, res) => {
-  const rows = await prisma.customer.findMany({ include: { _count: { select: { sales: true } }, sales: { select: { totalAmount: true } }, payments: { select: { amount: true } } }, orderBy: { name: 'asc' } });
-  res.json(rows.map(({ sales, payments, ...c }) => ({ ...c, totalSales: sales.reduce((s, x) => s + money(x.totalAmount), 0), totalReceived: payments.reduce((s, x) => s + money(x.amount), 0), outstanding: money(c.openingBalance) + sales.reduce((s, x) => s + money(x.totalAmount), 0) - payments.reduce((s, x) => s + money(x.amount), 0) })));
+  const rows = await prisma.customer.findMany({ include: { _count: { select: { sales: true } }, sales: true, payments: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
+  res.json(rows.map(row => { const { sales, payments, ...account } = customerAccount(row); return account; }));
 }));
 
 app.post('/api/customers', asyncRoute(async (req, res) => {
@@ -138,10 +136,12 @@ app.get('/api/customers/:id', asyncRoute(async (req, res) => {
     sales: { orderBy: { date: 'desc' }, include: { items: { include: { product: true } } } },
     payments: { orderBy: { date: 'desc' } }
   } });
-  const outstandingBalance = money(customer.openingBalance)
-    + customer.sales.reduce((sum, sale) => sum + money(sale.totalAmount), 0)
-    - customer.payments.reduce((sum, payment) => sum + money(payment.amount), 0);
-  res.json({ ...customer, outstandingBalance, outstanding: outstandingBalance });
+  res.json(customerAccount(customer));
+}));
+
+app.post('/api/customers/:id/payments', asyncRoute(async (req, res) => {
+  const input = paymentFields.parse(req.body);
+  res.status(201).json(await recordPayment({ ...input, direction: 'RECEIVED', customerId: String(req.params.id) }, true));
 }));
 
 app.put('/api/customers/:id', asyncRoute(async (req, res) => {
@@ -152,8 +152,8 @@ app.put('/api/customers/:id', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/dealers', asyncRoute(async (_req, res) => {
-  const rows = await prisma.dealer.findMany({ include: { _count: { select: { purchases: true } }, purchases: { select: { totalAmount: true } }, payments: { select: { amount: true } } }, orderBy: { name: 'asc' } });
-  res.json(rows.map(({ purchases, payments, ...d }) => ({ ...d, totalPurchases: purchases.reduce((s, x) => s + money(x.totalAmount), 0), totalPaid: payments.reduce((s, x) => s + money(x.amount), 0), payable: money(d.openingBalance) + purchases.reduce((s, x) => s + money(x.totalAmount), 0) - payments.reduce((s, x) => s + money(x.amount), 0) })));
+  const rows = await prisma.dealer.findMany({ include: { _count: { select: { purchases: true } }, purchases: true, payments: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
+  res.json(rows.map(row => { const { purchases, payments, ...account } = dealerAccount(row); return account; }));
 }));
 
 app.post('/api/dealers', asyncRoute(async (req, res) => {
@@ -166,10 +166,12 @@ app.get('/api/dealers/:id', asyncRoute(async (req, res) => {
     purchases: { orderBy: { date: 'desc' }, include: { items: { include: { product: true } } } },
     payments: { orderBy: { date: 'desc' } }
   } });
-  const balanceDue = money(dealer.openingBalance)
-    + dealer.purchases.reduce((sum, purchase) => sum + money(purchase.totalAmount), 0)
-    - dealer.payments.reduce((sum, payment) => sum + money(payment.amount), 0);
-  res.json({ ...dealer, balanceDue, payable: balanceDue });
+  res.json(dealerAccount(dealer));
+}));
+
+app.post('/api/dealers/:id/payments', asyncRoute(async (req, res) => {
+  const input = paymentFields.parse(req.body);
+  res.status(201).json(await recordPayment({ ...input, direction: 'PAID', dealerId: String(req.params.id) }, true));
 }));
 
 app.put('/api/dealers/:id', asyncRoute(async (req, res) => {
@@ -181,7 +183,13 @@ app.put('/api/dealers/:id', asyncRoute(async (req, res) => {
 const lineSchema = z.object({ productId: z.string(), quantity: z.coerce.number().positive(), rate: z.coerce.number().nonnegative() });
 
 app.get('/api/purchases', asyncRoute(async (_req, res) => {
-  res.json(await prisma.purchase.findMany({ include: { dealer: true, items: { include: { product: true } } }, orderBy: { date: 'desc' } }));
+  const [rows, dealers] = await Promise.all([
+    prisma.purchase.findMany({ include: { dealer: true, items: { include: { product: true } } }, orderBy: { date: 'desc' } }),
+    prisma.dealer.findMany({ include: { purchases: true, payments: true } })
+  ]);
+  const settled = new Map(dealers.flatMap(dealer => dealerAccount(dealer).purchases.map(invoice => [invoice.id, invoice] as const)));
+  res.json(rows.map(row => ({ ...row, paidAmount: settled.get(row.id)?.paidAmount ?? row.paidAmount,
+    pendingAmount: settled.get(row.id)?.pendingAmount ?? row.pendingAmount })));
 }));
 
 app.post('/api/purchases', asyncRoute(async (req, res) => {
@@ -207,7 +215,13 @@ app.post('/api/purchases', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/sales', asyncRoute(async (_req, res) => {
-  res.json(await prisma.sale.findMany({ include: { customer: true, items: { include: { product: true } } }, orderBy: { date: 'desc' } }));
+  const [rows, customers] = await Promise.all([
+    prisma.sale.findMany({ include: { customer: true, items: { include: { product: true } } }, orderBy: { date: 'desc' } }),
+    prisma.customer.findMany({ include: { sales: true, payments: true } })
+  ]);
+  const settled = new Map(customers.flatMap(customer => customerAccount(customer).sales.map(invoice => [invoice.id, invoice] as const)));
+  res.json(rows.map(row => ({ ...row, receivedAmount: settled.get(row.id)?.receivedAmount ?? row.receivedAmount,
+    pendingAmount: settled.get(row.id)?.pendingAmount ?? row.pendingAmount })));
 }));
 
 app.post('/api/sales', asyncRoute(async (req, res) => {
@@ -234,12 +248,11 @@ app.post('/api/sales', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/payments', asyncRoute(async (_req, res) => {
-  res.json(await prisma.payment.findMany({ include: { customer: true, dealer: true }, orderBy: { date: 'desc' } }));
+  res.json(await prisma.payment.findMany({ include: { customer: true, dealer: true }, orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }] }));
 }));
 
 app.post('/api/payments', asyncRoute(async (req, res) => {
-  const input = z.object({ direction: z.enum(['RECEIVED','PAID']), customerId: z.string().optional(), dealerId: z.string().optional(), amount: z.coerce.number().positive(), mode: z.enum(['CASH','UPI','BANK_TRANSFER','CHEQUE','OTHER']).default('CASH'), date: z.coerce.date().optional(), reference: z.string().optional(), notes: z.string().optional() }).refine(x => x.direction === 'RECEIVED' ? !!x.customerId && !x.dealerId : !!x.dealerId && !x.customerId, 'Choose the correct customer or dealer').parse(req.body);
-  res.status(201).json(await prisma.payment.create({ data: input }));
+  res.status(201).json(await recordPayment(paymentInput.parse(req.body)));
 }));
 
 app.get('/api/stock-ledger', asyncRoute(async (req, res) => {
@@ -270,16 +283,21 @@ app.get('/api/transactions', asyncRoute(async (_req, res) => {
     prisma.sale.findMany({ include: { customer: true } }),
     prisma.purchase.findMany({ include: { dealer: true } }),
     prisma.expense.findMany(),
-    prisma.payment.findMany({ select: { reference: true, mode: true } })
+    prisma.payment.findMany({ include: { customer: true, dealer: true } })
   ]);
-  const paymentMode = (reference: string) => payments.find(payment => payment.reference === reference)?.mode || 'UNPAID';
+  const paymentMode = (reference: string, direction: 'RECEIVED' | 'PAID', partyId: string | null) => payments.find(payment =>
+    payment.reference === reference && payment.direction === direction && (direction === 'RECEIVED' ? payment.customerId === partyId : payment.dealerId === partyId))?.mode || 'UNPAID';
   const rows = [
     ...sales.map(sale => ({ id: sale.id, transactionType: 'SALE', date: sale.date, partyName: sale.customer?.name || 'Walk-in customer',
-      category: 'Sale', amount: money(sale.totalAmount), paymentMode: paymentMode(sale.saleNo), reference: sale.saleNo, direction: 'IN' })),
+      category: 'Sale', amount: money(sale.totalAmount), paymentMode: paymentMode(sale.saleNo, 'RECEIVED', sale.customerId), reference: sale.saleNo, direction: 'IN' })),
     ...purchases.map(purchase => ({ id: purchase.id, transactionType: 'PURCHASE', date: purchase.date, partyName: purchase.dealer.name,
-      category: 'Purchase', amount: money(purchase.totalAmount), paymentMode: paymentMode(purchase.purchaseNo), reference: purchase.purchaseNo, direction: 'OUT' })),
+      category: 'Purchase', amount: money(purchase.totalAmount), paymentMode: paymentMode(purchase.purchaseNo, 'PAID', purchase.dealerId), reference: purchase.purchaseNo, direction: 'OUT' })),
     ...expenses.map(expense => ({ id: expense.id, transactionType: 'EXPENSE', date: expense.date, partyName: expense.title,
-      category: expense.category, amount: money(expense.amount), paymentMode: expense.paymentMode, reference: expense.id, direction: 'OUT' }))
+      category: expense.category, amount: money(expense.amount), paymentMode: expense.paymentMode, reference: expense.id, direction: 'OUT' })),
+    ...payments.map(payment => ({ id: payment.id, transactionType: 'PAYMENT', date: payment.date,
+      partyName: payment.direction === 'RECEIVED' ? payment.customer?.name || 'Walk-in customer' : payment.dealer?.name || 'Dealer',
+      category: payment.direction === 'RECEIVED' ? 'Customer receipt' : 'Dealer payment', amount: money(payment.amount),
+      paymentMode: payment.mode, reference: payment.reference || payment.id, direction: payment.direction === 'RECEIVED' ? 'IN' : 'OUT' }))
   ];
   res.json(rows.sort((a, b) => b.date.getTime() - a.date.getTime()));
 }));
@@ -296,9 +314,12 @@ app.use((_req, res) => res.status(404).json({ message: 'Resource not found' }));
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
+  if (err instanceof PaymentError) return res.status(err.status).json({ message: err.message });
   if (err instanceof z.ZodError) return res.status(400).json({ message: err.issues[0]?.message || 'Invalid request', issues: err.issues });
   if (err instanceof Prisma.PrismaClientInitializationError) return res.status(503).json({ message: 'The database is temporarily unavailable. Please try again.' });
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return res.status(409).json({ message: 'A record with these details already exists' });
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') return res.status(404).json({ message: 'Account or record not found' });
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') return res.status(409).json({ message: 'The account changed while saving. Refresh and retry.' });
   res.status(500).json({ message: err instanceof Error ? err.message : 'Something went wrong' });
 });
 
