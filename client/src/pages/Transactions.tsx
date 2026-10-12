@@ -192,7 +192,7 @@ function Transactions({ kind }: { kind: 'sale' | 'purchase' }) {
 
       <Modal wide title={editing ? `Edit ${saleMode ? 'sale' : 'purchase'} — ${saleMode ? (editing as Sale).saleNo : (editing as Purchase).purchaseNo}` : saleMode ? 'Create new sale' : 'Record a purchase'} subtitle={editing ? 'Saving recalculates stock and account balances. Existing payments are retained.' : saleMode ? 'Inventory will reduce when you save this invoice.' : 'Inventory and weighted cost will update when saved.'} open={open} onClose={() => { if (!busy) { setOpen(false); reset(); } }}>
         <form onSubmit={save}>
-          <fieldset disabled={busy} className="payment-fields">
+          <fieldset disabled={busy} className="invoice-form-fields">
           <div className="transaction-meta">
             <Field label={saleMode ? 'Customer' : 'Dealer'}>
               <select required={!saleMode || payment < total} value={partyId} onChange={e => setPartyId(e.target.value)}>
@@ -245,13 +245,13 @@ function Transactions({ kind }: { kind: 'sale' | 'purchase' }) {
                   <option value="OTHER">Other</option>
                 </select>
               </Field>}
-              {editing && <p className="balance-explanation">To correct a payment, use Customers or Dealers → History → Edit payment. Bill-linked payments follow a corrected party; other account payments stay with their original account.</p>}
+              {editing && <p className="balance-explanation">Existing payments are kept. To change a receipt or payout, use account History → Edit payment. Bill-linked payments follow a corrected party.</p>}
             </div>
             <div className="bill-summary">
               <p><span>Subtotal</span><strong>{inr(total)}</strong></p>
               <p><span>{saleMode ? 'Received' : 'Paid'}</span><strong className="positive">− {inr(payment)}</strong></p>
               <hr />
-              <p className="balance"><span>{editing ? 'Recalculated on save' : saleMode ? 'Customer due' : 'Dealer due'}</span><strong>{editing ? 'Stock & balance' : dueInr(Math.max(0, total - payment))}</strong></p>
+              {editing ? <p>Account dues recalculate on save.</p> : <p className="balance"><span>{saleMode ? 'Customer due' : 'Dealer due'}</span><strong>{dueInr(Math.max(0, total - payment))}</strong></p>}
             </div>
           </div>
           {editing && <Field label="Reason for invoice correction"><input required minLength={3} maxLength={500} value={reason} onChange={event => setReason(event.target.value)} placeholder="Wrong quantity, rate, date, or account" /></Field>}
