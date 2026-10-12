@@ -86,6 +86,11 @@ test('production serves the SPA, assets and JSON API errors; unhealthy DB return
     const missingApi = await fetch(`${base}/api/missing`, {
       headers: { Authorization: `Bearer ${jwt.sign({ id: 'verification' }, testSecret)}` }
     });
+    for (const party of ['sales', 'purchases']) {
+      assert.equal((await fetch(`${base}/api/${party}/invoice`)).status, 401);
+      assert.equal((await fetch(`${base}/api/${party}/invoice`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+      assert.equal((await fetch(`${base}/api/${party}/invoice`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt.sign({ id: 'verification' }, testSecret)}` }, body: '{}' })).status, 400);
+    }
     for (const party of ['customers', 'dealers']) {
       for (const [route, method] of [[`/api/${party}/account/payments/payment`, 'PUT'], [`/api/${party}/account/balance-adjustments`, 'POST']]) {
         assert.equal((await fetch(`${base}${route}`, { method, headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);

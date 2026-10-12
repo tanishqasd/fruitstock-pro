@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { access } from 'node:fs/promises';
 import { asyncRoute, auth, money, prisma, serial } from './lib.js';
 import { customerAccount, dealerAccount } from './accounting.js';
+import { editInvoice, invoiceEditInput } from './invoice-edits.js';
 import { PaymentError, paymentFields, paymentInput, recordPayment, paymentEditInput, balanceInput, editPayment, adjustBalance } from './payments.js';
 
 const app = express();
@@ -194,6 +195,20 @@ app.put('/api/dealers/:id', asyncRoute(async (req, res) => {
 }));
 
 const lineSchema = z.object({ productId: z.string(), quantity: z.coerce.number().positive(), rate: z.coerce.number().nonnegative() });
+
+for (const [endpoint, kind] of [['sales', 'sale'], ['purchases', 'purchase']] as const) {
+  app.get(`/api/${endpoint}/:id`, asyncRoute(async (req, res) => {
+    const id = String(req.params.id);
+    const bill = kind === 'sale'
+      ? await prisma.sale.findUniqueOrThrow({ where: { id }, include: { customer: true, items: { include: { product: true } } } })
+      : await prisma.purchase.findUniqueOrThrow({ where: { id }, include: { dealer: true, items: { include: { product: true } } } });
+    res.json(bill);
+  }));
+  app.put(`/api/${endpoint}/:id`, asyncRoute(async (req, res) => {
+    const actorId = (req as typeof req & { user: { id: string } }).user.id;
+    res.json(await editInvoice(kind, String(req.params.id), invoiceEditInput.parse(req.body), actorId));
+  }));
+}
 
 app.get('/api/purchases', asyncRoute(async (_req, res) => {
   const [rows, dealers] = await Promise.all([

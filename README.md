@@ -120,3 +120,13 @@ Open Customers or Dealers → History → Edit payment to correct an amount, dat
 Use Adjust balance on any account to set its current due/credit, add dues, or reduce dues. Choose an effective date (including a past date) and enter a reason. These dated adjustment records change balances and invoice reconciliation without adding cash receipts or payouts. The profile and unified ledger show the adjustment separately. The current balance includes all recorded entries; the date records when the adjustment applies, rather than providing a historical balance report.
 
 Protected routes: PUT /api/customers/:id/payments/:paymentId and PUT /api/dealers/:id/payments/:paymentId; POST /api/customers/:id/balance-adjustments and POST /api/dealers/:id/balance-adjustments. The additive account_corrections Prisma migration preserves existing accounts and payments. Deployment verifies edits, reversals, stale-version protection and backdated adjustments in a rolled-back PostgreSQL transaction.
+
+### Editing sales and purchases
+
+Each sales and purchase row has an Edit action. The editor loads the latest invoice and allows correcting the customer/dealer, transaction date, invoice number, fruits, quantities and rates. A correction reason is required. The invoice ID and sale/purchase number remain unchanged. Stale edits are rejected until the editor is reopened.
+
+Payments are retained as ledger entries. Editing a bill does not insert or modify a receipt amount. Use account History → Edit payment for receipt corrections. When the party changes, payments explicitly linked to that bill move to the corrected account with payment correction history; later general account settlements remain with their original account. Both accounts are recalculated. A corrected total below payments becomes account credit; walk-in sales require the total to exactly match their recorded payments.
+
+Stock changes replace the original bill movements instead of adding a second sale or purchase. Affected inventory and later sale costs are recalculated in physical entry order. The document date can be corrected without changing that order. Corrections that create negative present or historical stock, or have an incomplete original/opening stock trail, are rejected atomically. Correction reasons are appended to bill notes and its stock history. No new database migration is required.
+
+Protected endpoints: GET/PUT /api/sales/:id and GET/PUT /api/purchases/:id. Run npm run test:invoices and npm run test:deployment after building. The pre-deploy database check also exercises invoice edits, party corrections, stock/cost reconciliation and stale/oversell rejection inside a rolled-back transaction.

@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../dist/lib.js';
 import { recordPayment, editPayment, adjustBalance, PaymentError } from '../dist/payments.js';
 import { customerAccount, dealerAccount } from '../dist/accounting.js';
+import { verifyInvoiceEdits } from './verify-invoices-in-transaction.mjs';
 
 // All fixtures live inside one transaction that is ALWAYS rolled back. This
 // checks real PostgreSQL writes without adding rows to the business database.
@@ -81,9 +82,10 @@ try {
     assert.equal(finalCustomer.outstanding, 500.25); assert.equal(finalCustomer.totalReceived, 970); assert.equal(finalCustomer.adjustmentTotal, 370.25);
     assert.equal(await tx.paymentEdit.count({ where: { createdById: actor.id } }), 2);
     assert.equal(await tx.balanceAdjustment.count({ where: { createdById: actor.id } }), 4);
+    await verifyInvoiceEdits(tx, database, actor.id, marker);
     verified = true;
     throw rollback;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 30000 });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 60000 });
 } catch (error) {
   if (error !== rollback) throw error;
 } finally {
@@ -91,7 +93,8 @@ try {
     assert.equal(await prisma.customer.count({ where: { id: { in: fixtures } } }), 0);
     assert.equal(await prisma.dealer.count({ where: { id: { in: fixtures } } }), 0);
     assert.equal(await prisma.user.count({ where: { email: `${marker}@example.test` } }), 0);
-    console.log('PASS: payments, audited edits and reversals, dated balance adjustments, exact current balance, stale edit protection, account isolation and credit; all test rows rolled back.');
+    assert.equal(await prisma.product.count({ where: { name: `${marker}-fruit` } }), 0);
+    console.log('PASS: payment and balance corrections; sale/purchase edits, stock and cost replay, linked-payment account correction, stale/oversell rejection and no duplicates; all test rows rolled back.');
   }
   await prisma.$disconnect();
 }

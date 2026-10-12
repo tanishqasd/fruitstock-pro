@@ -10,6 +10,7 @@
     "typecheck": "npm run typecheck --workspace=server && npm run typecheck --workspace=client",
     "test:deployment": "node --test scripts/verify-deployment.mjs",
     "test:accounting": "node --test scripts/verify-accounting.mjs",
+    "test:invoices": "node --test scripts/verify-invoice-edits.mjs",
     "db:generate": "npm run db:generate --workspace=server",
     "db:migrate": "npm run db:migrate --workspace=server",
     "db:deploy": "npm run db:deploy --workspace=server",
