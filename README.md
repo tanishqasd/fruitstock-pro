@@ -1,5 +1,29 @@
 # FruitStock Wholesale
 
+A full-stack application built for a wholesale client to manage inventory, purchases, sales, customer/dealer accounts and payments in one workspace.
+
+[Application sign-in](https://fruitwholeasaler.vercel.app/)
+
+## At a glance
+
+- Tracks stock movements alongside purchases and sales.
+- Maintains customer and dealer balances, receipts and payouts.
+- Presents sales, stock value, receivables and payables in dashboard views.
+- Protects business workflows with owner authentication.
+
+**Stack:** React, TypeScript, Vite, Node.js, Express, Prisma and PostgreSQL.
+
+**Deployment:** Vercel frontend with the API and PostgreSQL database on Railway.
+
+The main engineering focus is keeping inventory and account balances consistent across related updates using database transactions. The technical documentation below covers setup, verification scripts, deployment and accounting behavior.
+
+## Access
+
+The deployed application requires a business owner account. Client credentials and business records are not public demo material.
+
+## Architecture
+
+
 React/Vite frontend and Express/Prisma/PostgreSQL backend in one npm workspace. In production, Express serves `client/dist` and `/api` on the same public domain.
 
 ## Local development
